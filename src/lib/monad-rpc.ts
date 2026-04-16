@@ -57,16 +57,16 @@ async function ethCall(data: string): Promise<string> {
 }
 
 /**
- * Batch fetch multiple eth_call results with concurrent chunking.
+ * Batch fetch multiple eth_call results.
  * Monad RPC doesn't support JSON-RPC batch arrays, so we use
- * parallel individual calls with concurrency limit (20 at a time)
- * to stay within the 25 req/s rate limit.
+ * concurrent individual calls with conservative concurrency (10 at a time)
+ * to stay safely within the 25 req/s rate limit.
  */
 async function batchEthCall(
   calls: { data: string; id: number }[]
 ): Promise<Map<number, string>> {
   const results = new Map<number, string>();
-  const CONCURRENCY = 20; // Stay under 25 req/s limit
+  const CONCURRENCY = 10; // Conservative to avoid rate limiting
 
   for (let i = 0; i < calls.length; i += CONCURRENCY) {
     const chunk = calls.slice(i, i + CONCURRENCY);
@@ -84,9 +84,9 @@ async function batchEthCall(
       }
     }
 
-    // Brief pause between chunks to avoid rate limit spikes
+    // 500ms pause between chunks to stay well under rate limits
     if (i + CONCURRENCY < calls.length) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
 
