@@ -40,20 +40,28 @@ function encodeUint64(n: bigint): string {
   return n.toString(16).padStart(64, "0");
 }
 
-async function ethCall(data: string): Promise<string> {
-  const res = await fetch(MONAD_RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "eth_call",
-      params: [{ to: STAKING_CONTRACT, data }, "latest"],
-      id: 1,
-    }),
-  });
-  const json = await res.json();
-  if (json.error) throw new Error(`RPC error: ${json.error.message}`);
-  return json.result;
+async function ethCall(data: string, timeoutMs = 10000): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(MONAD_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "eth_call",
+        params: [{ to: STAKING_CONTRACT, data }, "latest"],
+        id: 1,
+      }),
+      signal: controller.signal,
+    });
+    const json = await res.json();
+    if (json.error) throw new Error(`RPC error: ${json.error.message}`);
+    return json.result;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -324,11 +332,36 @@ export async function getValidators(
 
   const results = await batchEthCall(calls);
   const snapshots: ValidatorSnapshot[] = [];
+  const missing: number[] = [];
 
   for (let i = 0; i < validatorIds.length; i++) {
     const hex = results.get(i);
     if (hex) {
       snapshots.push(decodeValidatorResponse(hex, validatorIds[i]));
+    } else {
+      missing.push(validatorIds[i]);
+    }
+  }
+
+  // Individual retry pass for any stragglers with longer timeout
+  if (missing.length > 0) {
+    console.log(
+      `[rpc] Retrying ${missing.length} missing validators individually`
+    );
+    for (const id of missing) {
+      try {
+        const hex = await ethCall(
+          GET_VALIDATOR + encodeUint64(BigInt(id)),
+          15000
+        );
+        if (hex) {
+          snapshots.push(decodeValidatorResponse(hex, id));
+        }
+      } catch {
+        console.log(`[rpc] Validator ${id} failed final retry`);
+      }
+      // Small delay between individual retries
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
 
