@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { epochSnapshots, validators, networkEpochs } from "@/lib/db/schema";
 import {
   getEpoch,
-  getConsensusValidatorIds,
+  getAllValidatorIds,
   getValidators,
   getMonPrice,
   calculateEpochReward,
@@ -64,9 +64,9 @@ export async function GET(request: Request) {
       });
     }
 
-    // 3. Fetch consensus validator IDs
-    const validatorIds = await getConsensusValidatorIds();
-    console.log(`[snapshot] Found ${validatorIds.length} active validators`);
+    // 3. Fetch ALL validator IDs (execution set + brute-force enumeration)
+    const validatorIds = await getAllValidatorIds(true);
+    console.log(`[snapshot] Found ${validatorIds.length} total validators`);
 
     // 4. Fetch all validator data
     const validatorData = await getValidators(validatorIds);

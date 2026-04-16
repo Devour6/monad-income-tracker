@@ -27,6 +27,7 @@ const STAKING_CONTRACT = "0x0000000000000000000000000000000000001000";
 // Function selectors
 const GET_EPOCH = "0x757991a8";
 const GET_CONSENSUS_VALIDATOR_SET = "0xfb29b729";
+const GET_EXECUTION_VALIDATOR_SET = "0x7cb074df";
 const GET_VALIDATOR = "0x2b6d639a";
 
 const WEI_PER_MON = BigInt(10) ** BigInt(18);
@@ -139,7 +140,28 @@ export async function getEpoch(): Promise<EpochInfo> {
   };
 }
 
-/** Fetch all active validator IDs from consensus set */
+/** Decode a paginated validator set response (shared by consensus/execution/snapshot) */
+function decodePaginatedValidatorSet(result: string): {
+  isDone: boolean;
+  nextIndex: number;
+  ids: number[];
+} {
+  const hex = result.slice(2);
+  const isDone = BigInt("0x" + hex.slice(0, 64)) !== BigInt(0);
+  const nextIndex = Number(BigInt("0x" + hex.slice(64, 128)));
+  const arrayOffset = Number(BigInt("0x" + hex.slice(128, 192))) * 2;
+  const arrayLen = Number(
+    BigInt("0x" + hex.slice(arrayOffset, arrayOffset + 64))
+  );
+  const ids: number[] = [];
+  for (let i = 0; i < arrayLen; i++) {
+    const start = arrayOffset + 64 + i * 64;
+    ids.push(Number(BigInt("0x" + hex.slice(start, start + 64))));
+  }
+  return { isDone, nextIndex, ids };
+}
+
+/** Fetch all active validator IDs from consensus set (~48 validators) */
 export async function getConsensusValidatorIds(): Promise<number[]> {
   const allIds: number[] = [];
   let startIndex = 0;
@@ -148,24 +170,118 @@ export async function getConsensusValidatorIds(): Promise<number[]> {
   while (!isDone) {
     const data = GET_CONSENSUS_VALIDATOR_SET + encodeUint32(startIndex);
     const result = await ethCall(data);
-    const hex = result.slice(2);
+    const parsed = decodePaginatedValidatorSet(result);
+    isDone = parsed.isDone;
+    startIndex = parsed.nextIndex;
+    allIds.push(...parsed.ids);
+  }
 
-    isDone = BigInt("0x" + hex.slice(0, 64)) !== BigInt(0);
-    startIndex = Number(BigInt("0x" + hex.slice(64, 128)));
+  return allIds;
+}
 
-    const arrayOffset = Number(BigInt("0x" + hex.slice(128, 192))) * 2;
-    const arrayLen = Number(
-      BigInt("0x" + hex.slice(arrayOffset, arrayOffset + 64))
-    );
+/** Fetch all active validator IDs from execution set (up to 200 — the broadest active set) */
+export async function getExecutionValidatorIds(): Promise<number[]> {
+  const allIds: number[] = [];
+  let startIndex = 0;
+  let isDone = false;
 
-    for (let i = 0; i < arrayLen; i++) {
-      const start = arrayOffset + 64 + i * 64;
-      const valId = Number(BigInt("0x" + hex.slice(start, start + 64)));
-      allIds.push(valId);
+  while (!isDone) {
+    const data = GET_EXECUTION_VALIDATOR_SET + encodeUint32(startIndex);
+    const result = await ethCall(data);
+    const parsed = decodePaginatedValidatorSet(result);
+    isDone = parsed.isDone;
+    startIndex = parsed.nextIndex;
+    allIds.push(...parsed.ids);
+  }
+
+  return allIds;
+}
+
+/**
+ * Enumerate ALL registered validators by brute-force iteration.
+ * Starts from ID 1 and goes up to maxId + buffer.
+ * Returns IDs for all validators with non-zero stake or authAddress.
+ */
+export async function enumerateAllValidatorIds(
+  knownMaxId?: number
+): Promise<number[]> {
+  const maxToScan = (knownMaxId ?? 200) + 50;
+  const allIds: number[] = [];
+
+  // Build batch calls for all IDs
+  const calls = [];
+  for (let id = 1; id <= maxToScan; id++) {
+    calls.push({
+      data: GET_VALIDATOR + encodeUint64(BigInt(id)),
+      id,
+    });
+  }
+
+  const results = await batchEthCall(calls);
+
+  for (let id = 1; id <= maxToScan; id++) {
+    const hex = results.get(id);
+    if (!hex || hex === "0x") continue;
+
+    try {
+      const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+      // Check authAddress (slot 0) — zero means non-existent
+      const authAddr = h.slice(24, 64);
+      if (authAddr === "0".repeat(40)) continue;
+
+      // Check stake (slot 2) — zero stake means inactive but registered
+      const stakeWei = BigInt("0x" + h.slice(128, 192));
+
+      // Include if they have any stake at all
+      if (stakeWei > BigInt(0)) {
+        allIds.push(id);
+      }
+    } catch {
+      // Skip if can't decode — probably past the last validator
+      continue;
     }
   }
 
   return allIds;
+}
+
+/**
+ * Get the broadest possible validator set.
+ * Strategy:
+ * 1. Try getExecutionValidatorSet (up to 200 active validators)
+ * 2. If that fails, fall back to getConsensusValidatorSet
+ * 3. Optionally brute-force enumerate to catch inactive validators
+ */
+export async function getAllValidatorIds(
+  includeInactive = false
+): Promise<number[]> {
+  let ids: number[];
+
+  try {
+    ids = await getExecutionValidatorIds();
+    console.log(`[rpc] Execution validator set: ${ids.length} validators`);
+  } catch (err) {
+    console.log(
+      `[rpc] Execution set failed, falling back to consensus:`,
+      err
+    );
+    ids = await getConsensusValidatorIds();
+    console.log(`[rpc] Consensus validator set: ${ids.length} validators`);
+  }
+
+  if (includeInactive) {
+    const maxKnown = Math.max(...ids);
+    const allIds = await enumerateAllValidatorIds(maxKnown);
+    // Merge — use a Set to deduplicate
+    const merged = new Set([...ids, ...allIds]);
+    const result = Array.from(merged).sort((a, b) => a - b);
+    console.log(
+      `[rpc] Full enumeration: ${result.length} total (${ids.length} active + ${result.length - ids.length} additional)`
+    );
+    return result;
+  }
+
+  return ids;
 }
 
 /** Decode a getValidator response hex string */
