@@ -109,12 +109,8 @@ export async function GET(request: Request) {
         );
 
         if (totalRewardMon > 0) {
-          // Commission is stored as raw uint256 — need to determine scale
-          // For now, use the commission from validator-names mapping if available
-          const commissionRate = v.commission > 0
-            ? Number(v.commission) / 100
-            : (nameRegistry[v.validatorId]?.commission ?? 0) / 100;
-
+          // Commission is on-chain as 18-decimal fixed-point (e.g. 200000000000000000 = 20%)
+          const commissionRate = Number(v.commission) / 1e18;
           const commIncome = totalRewardMon * commissionRate;
           blockRewardsMon = totalRewardMon.toFixed(18);
           commissionMon = commIncome.toFixed(18);
@@ -136,14 +132,15 @@ export async function GET(request: Request) {
 
       // Prepare validator metadata update
       const name = nameRegistry[v.validatorId]?.name ?? null;
-      const commPct = nameRegistry[v.validatorId]?.commission ?? null;
+      // Commission from on-chain: 18-decimal fixed-point → percentage
+      const commPct = Number(v.commission) / 1e18 * 100;
 
       validatorRows.push({
         validatorId: v.validatorId,
         authAddress: v.authAddress,
         name,
         stakeMon: v.stakeMon.toFixed(2),
-        commissionPct: commPct?.toFixed(2) ?? null,
+        commissionPct: commPct.toFixed(2),
         lastEpoch: epoch,
       });
     }

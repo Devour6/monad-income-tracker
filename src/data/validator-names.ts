@@ -8,7 +8,6 @@ import registryData from "./validator-registry.json";
 
 export interface ValidatorInfo {
   name: string;
-  commission: number; // percentage 0-100 (from on-chain, not registry)
   logo?: string;
   website?: string;
   x?: string;
@@ -30,7 +29,6 @@ export const VALIDATOR_NAMES: Record<number, ValidatorInfo> = {};
 for (const [id, entry] of Object.entries(registry)) {
   VALIDATOR_NAMES[Number(id)] = {
     name: entry.name,
-    commission: 0, // Commission comes from on-chain data, not registry
     logo: entry.logo,
     website: entry.website,
     x: entry.x,
@@ -85,7 +83,6 @@ export async function fetchFreshRegistry(): Promise<
           const v = r.value;
           freshMap[v.id] = {
             name: v.name || `Validator #${v.id}`,
-            commission: 0,
             logo: v.logo,
             website: v.website,
             x: v.x,
