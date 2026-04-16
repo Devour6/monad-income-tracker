@@ -67,26 +67,51 @@ async function batchEthCall(
 ): Promise<Map<number, string>> {
   const results = new Map<number, string>();
   const CONCURRENCY = 10; // Conservative to avoid rate limiting
+  const MAX_RETRIES = 2;
 
-  for (let i = 0; i < calls.length; i += CONCURRENCY) {
-    const chunk = calls.slice(i, i + CONCURRENCY);
+  let pending = [...calls];
 
-    const settled = await Promise.allSettled(
-      chunk.map(async (c) => {
-        const result = await ethCall(c.data);
-        return { id: c.id, result };
-      })
-    );
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const failed: { data: string; id: number }[] = [];
 
-    for (const s of settled) {
-      if (s.status === "fulfilled") {
-        results.set(s.value.id, s.value.result);
+    for (let i = 0; i < pending.length; i += CONCURRENCY) {
+      const chunk = pending.slice(i, i + CONCURRENCY);
+
+      const settled = await Promise.allSettled(
+        chunk.map(async (c) => {
+          const result = await ethCall(c.data);
+          return { id: c.id, result };
+        })
+      );
+
+      for (let j = 0; j < settled.length; j++) {
+        const s = settled[j];
+        if (s.status === "fulfilled") {
+          results.set(s.value.id, s.value.result);
+        } else {
+          failed.push(chunk[j]);
+        }
+      }
+
+      // 500ms pause between chunks to stay well under rate limits
+      if (i + CONCURRENCY < pending.length) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
-    // 500ms pause between chunks to stay well under rate limits
-    if (i + CONCURRENCY < calls.length) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    if (failed.length === 0) break;
+
+    if (attempt < MAX_RETRIES) {
+      console.log(
+        `[rpc] Retrying ${failed.length} failed calls (attempt ${attempt + 2}/${MAX_RETRIES + 1})`
+      );
+      // Back off before retrying
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      pending = failed;
+    } else {
+      console.log(
+        `[rpc] ${failed.length} calls still failed after ${MAX_RETRIES + 1} attempts`
+      );
     }
   }
 
