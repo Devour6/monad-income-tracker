@@ -1,0 +1,203 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { epochSnapshots, validators, networkEpochs } from "@/lib/db/schema";
+import {
+  getEpoch,
+  getConsensusValidatorIds,
+  getValidators,
+  getMonPrice,
+  calculateEpochReward,
+} from "@/lib/monad-rpc";
+import { eq, and } from "drizzle-orm";
+import { VALIDATOR_NAMES } from "@/data/validator-names";
+
+/**
+ * Cron endpoint: Snapshots all validator accRewardPerToken values for the current epoch.
+ * Runs every 6 hours via Vercel Cron.
+ *
+ * Flow:
+ * 1. Get current epoch from precompile
+ * 2. Check if we already have a snapshot for this epoch
+ * 3. Fetch all consensus validators
+ * 4. Batch-fetch validator data (stake, accRewardPerToken, commission)
+ * 5. Store snapshots and compute income deltas from previous epoch
+ * 6. Update validator metadata
+ */
+export async function GET(request: Request) {
+  // Verify cron secret (Vercel sends this header)
+  const authHeader = request.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    // 1. Get current epoch
+    const { epoch, inDelayPeriod } = await getEpoch();
+    console.log(
+      `[snapshot] Current epoch: ${epoch}, inDelayPeriod: ${inDelayPeriod}`
+    );
+
+    // Skip if we're in the delay period (validator set is transitioning)
+    if (inDelayPeriod) {
+      return NextResponse.json({
+        status: "skipped",
+        reason: "in_epoch_delay_period",
+        epoch,
+      });
+    }
+
+    // 2. Check if we already have this epoch
+    const existing = await db
+      .select({ id: epochSnapshots.id })
+      .from(epochSnapshots)
+      .where(eq(epochSnapshots.epoch, epoch))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return NextResponse.json({
+        status: "skipped",
+        reason: "epoch_already_snapshotted",
+        epoch,
+      });
+    }
+
+    // 3. Fetch consensus validator IDs
+    const validatorIds = await getConsensusValidatorIds();
+    console.log(`[snapshot] Found ${validatorIds.length} active validators`);
+
+    // 4. Fetch all validator data
+    const validatorData = await getValidators(validatorIds);
+    console.log(`[snapshot] Fetched data for ${validatorData.length} validators`);
+
+    // 5. Get MON price
+    const monPrice = await getMonPrice();
+
+    // 6. Get previous epoch snapshots for delta computation
+    const prevEpoch = epoch - 1;
+    const prevSnapshots = await db
+      .select()
+      .from(epochSnapshots)
+      .where(eq(epochSnapshots.epoch, prevEpoch));
+
+    const prevMap = new Map(
+      prevSnapshots.map((s) => [s.validatorId, s])
+    );
+
+    // 7. Insert epoch snapshots with income computation
+    let totalNetworkStake = 0;
+    const snapshotRows: (typeof epochSnapshots.$inferInsert)[] = [];
+    const validatorRows: (typeof validators.$inferInsert)[] = [];
+
+    for (const v of validatorData) {
+      let blockRewardsMon: string | null = null;
+      let commissionMon: string | null = null;
+
+      // Compute delta from previous epoch if available
+      const prev = prevMap.get(v.validatorId);
+      if (prev) {
+        const prevAcc = BigInt(prev.accRewardPerToken);
+        const { totalRewardMon } = calculateEpochReward(
+          prevAcc,
+          v.accRewardPerToken,
+          v.stakeWei
+        );
+
+        if (totalRewardMon > 0) {
+          // Commission is stored as raw uint256 — need to determine scale
+          // For now, use the commission from validator-names mapping if available
+          const commissionRate = v.commission > 0
+            ? Number(v.commission) / 100
+            : (VALIDATOR_NAMES[v.validatorId]?.commission ?? 0) / 100;
+
+          const commIncome = totalRewardMon * commissionRate;
+          blockRewardsMon = totalRewardMon.toFixed(18);
+          commissionMon = commIncome.toFixed(18);
+        }
+      }
+
+      snapshotRows.push({
+        epoch,
+        validatorId: v.validatorId,
+        accRewardPerToken: v.accRewardPerToken.toString(),
+        stakeWei: v.stakeWei.toString(),
+        commission: v.commission.toString(),
+        unclaimedRewards: v.unclaimedRewards.toString(),
+        blockRewardsMon,
+        commissionMon,
+      });
+
+      totalNetworkStake += v.stakeMon;
+
+      // Prepare validator metadata update
+      const name = VALIDATOR_NAMES[v.validatorId]?.name ?? null;
+      const commPct = VALIDATOR_NAMES[v.validatorId]?.commission ?? null;
+
+      validatorRows.push({
+        validatorId: v.validatorId,
+        authAddress: v.authAddress,
+        name,
+        stakeMon: v.stakeMon.toFixed(2),
+        commissionPct: commPct?.toFixed(2) ?? null,
+        lastEpoch: epoch,
+      });
+    }
+
+    // 8. Batch insert snapshots
+    if (snapshotRows.length > 0) {
+      // Insert in batches to avoid query size limits
+      for (let i = 0; i < snapshotRows.length; i += 50) {
+        const batch = snapshotRows.slice(i, i + 50);
+        await db.insert(epochSnapshots).values(batch);
+      }
+    }
+
+    // 9. Upsert validator metadata
+    for (const v of validatorRows) {
+      await db
+        .insert(validators)
+        .values(v)
+        .onConflictDoUpdate({
+          target: validators.validatorId,
+          set: {
+            authAddress: v.authAddress,
+            name: v.name,
+            stakeMon: v.stakeMon,
+            commissionPct: v.commissionPct,
+            lastEpoch: v.lastEpoch,
+            updatedAt: new Date(),
+          },
+        });
+    }
+
+    // 10. Insert network epoch data
+    await db.insert(networkEpochs).values({
+      epoch,
+      totalStakeMon: totalNetworkStake.toFixed(2),
+      activeValidators: validatorData.length,
+      monPriceUsd: monPrice > 0 ? monPrice.toFixed(8) : null,
+    });
+
+    const withIncome = snapshotRows.filter((s) => s.blockRewardsMon !== null);
+
+    return NextResponse.json({
+      status: "success",
+      epoch,
+      validators: validatorData.length,
+      withIncome: withIncome.length,
+      totalNetworkStake: Math.round(totalNetworkStake),
+      monPrice: monPrice || "unavailable",
+    });
+  } catch (error) {
+    console.error("[snapshot] Error:", error);
+    return NextResponse.json(
+      {
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
