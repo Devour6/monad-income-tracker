@@ -56,59 +56,40 @@ async function ethCall(data: string): Promise<string> {
   return json.result;
 }
 
+/**
+ * Batch fetch multiple eth_call results with concurrent chunking.
+ * Monad RPC doesn't support JSON-RPC batch arrays, so we use
+ * parallel individual calls with concurrency limit (20 at a time)
+ * to stay within the 25 req/s rate limit.
+ */
 async function batchEthCall(
   calls: { data: string; id: number }[]
 ): Promise<Map<number, string>> {
   const results = new Map<number, string>();
+  const CONCURRENCY = 20; // Stay under 25 req/s limit
 
-  // Try batch RPC first, fall back to sequential if not supported
-  for (let i = 0; i < calls.length; i += 50) {
-    const batch = calls.slice(i, i + 50);
+  for (let i = 0; i < calls.length; i += CONCURRENCY) {
+    const chunk = calls.slice(i, i + CONCURRENCY);
 
-    try {
-      // Try JSON-RPC batch (array of requests)
-      const batchPayload = batch.map((c) => ({
-        jsonrpc: "2.0" as const,
-        method: "eth_call",
-        params: [{ to: STAKING_CONTRACT, data: c.data }, "latest"],
-        id: c.id,
-      }));
+    const settled = await Promise.allSettled(
+      chunk.map(async (c) => {
+        const result = await ethCall(c.data);
+        return { id: c.id, result };
+      })
+    );
 
-      const res = await fetch(MONAD_RPC, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(batchPayload),
-      });
-      const json = await res.json();
-
-      // If response is an array, batch RPC worked
-      if (Array.isArray(json)) {
-        for (const r of json) {
-          if (r.result) {
-            results.set(r.id, r.result);
-          }
-        }
-        continue;
+    for (const s of settled) {
+      if (s.status === "fulfilled") {
+        results.set(s.value.id, s.value.result);
       }
-
-      // Single object response means batch not supported — fall through to sequential
-      console.log("[rpc] Batch not supported, falling back to sequential calls");
-    } catch {
-      console.log("[rpc] Batch call failed, falling back to sequential");
     }
 
-    // Sequential fallback — one call at a time with 25 req/s rate limit
-    for (const c of batch) {
-      try {
-        const result = await ethCall(c.data);
-        results.set(c.id, result);
-      } catch (err) {
-        console.error(`[rpc] Failed to fetch validator ${c.id}:`, err);
-      }
-      // Small delay to respect rate limits (25 req/s)
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    // Brief pause between chunks to avoid rate limit spikes
+    if (i + CONCURRENCY < calls.length) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
+
   return results;
 }
 

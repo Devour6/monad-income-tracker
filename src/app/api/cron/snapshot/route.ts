@@ -64,9 +64,9 @@ export async function GET(request: Request) {
       });
     }
 
-    // 3. Fetch ALL validator IDs (execution set + brute-force enumeration)
-    const validatorIds = await getAllValidatorIds(true);
-    console.log(`[snapshot] Found ${validatorIds.length} total validators`);
+    // 3. Fetch all active validator IDs via execution set (up to 200)
+    const validatorIds = await getAllValidatorIds(false);
+    console.log(`[snapshot] Found ${validatorIds.length} active validators`);
 
     // 4. Fetch all validator data
     const validatorData = await getValidators(validatorIds);
