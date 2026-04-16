@@ -1,98 +1,50 @@
 import { NextResponse } from "next/server";
-import {
-  getConsensusValidatorIds,
-  getValidators,
-} from "@/lib/monad-rpc";
-import { KNOWN_VALIDATORS } from "@/data/validator-names";
+import { db } from "@/lib/db";
+import { validators } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
 
 /**
- * Maps on-chain validator IDs to known validator names by matching stake amounts.
- * Run once to generate the VALIDATOR_NAMES mapping, then paste it into validator-names.ts.
- *
- * Matching strategy: For each on-chain validator, find the known validator whose
- * totalStake is closest (within 5% tolerance). Stakes shift over time so we use
- * approximate matching.
+ * Updates all validator names in the DB from the official Monad validator registry.
+ * Source: github.com/monad-developers/validator-info
  */
 export async function GET() {
   try {
-    const validatorIds = await getConsensusValidatorIds();
-    const validators = await getValidators(validatorIds);
+    // Try fetching fresh from GitHub, fall back to embedded
+    const registry = await fetchFreshRegistry().catch(() => VALIDATOR_NAMES);
 
-    // Sort by stake descending for better matching
-    const sorted = [...validators].sort((a, b) => b.stakeMon - a.stakeMon);
+    // Get all validators from DB
+    const allValidators = await db.select().from(validators);
 
-    const matched: Array<{
-      validatorId: number;
-      name: string;
-      commission: number;
-      onChainStake: number;
-      knownStake: number;
-      matchPct: number;
-    }> = [];
+    let updated = 0;
+    let alreadyNamed = 0;
+    let noMatch = 0;
 
-    const unmatched: Array<{
-      validatorId: number;
-      authAddress: string;
-      stake: number;
-    }> = [];
-
-    const usedKnown = new Set<number>();
-
-    for (const v of sorted) {
-      let bestMatch = -1;
-      let bestDiff = Infinity;
-
-      for (let i = 0; i < KNOWN_VALIDATORS.length; i++) {
-        if (usedKnown.has(i)) continue;
-        const known = KNOWN_VALIDATORS[i];
-        const diff = Math.abs(v.stakeMon - known.totalStake);
-        const pct = diff / known.totalStake;
-
-        // Within 20% tolerance (stakes change over time)
-        if (pct < 0.20 && diff < bestDiff) {
-          bestDiff = diff;
-          bestMatch = i;
+    for (const v of allValidators) {
+      const entry = registry[v.validatorId];
+      if (entry?.name) {
+        const currentName = v.name;
+        if (currentName !== entry.name) {
+          await db
+            .update(validators)
+            .set({ name: entry.name, updatedAt: new Date() })
+            .where(eq(validators.validatorId, v.validatorId));
+          updated++;
+        } else {
+          alreadyNamed++;
         }
-      }
-
-      if (bestMatch >= 0) {
-        const known = KNOWN_VALIDATORS[bestMatch];
-        usedKnown.add(bestMatch);
-        matched.push({
-          validatorId: v.validatorId,
-          name: known.name,
-          commission: known.commission,
-          onChainStake: Math.round(v.stakeMon),
-          knownStake: Math.round(known.totalStake),
-          matchPct: Number(
-            ((1 - bestDiff / known.totalStake) * 100).toFixed(1)
-          ),
-        });
       } else {
-        unmatched.push({
-          validatorId: v.validatorId,
-          authAddress: v.authAddress,
-          stake: Math.round(v.stakeMon),
-        });
+        noMatch++;
       }
     }
 
-    // Generate the TypeScript mapping code
-    const tsCode = matched
-      .sort((a, b) => a.validatorId - b.validatorId)
-      .map(
-        (m) =>
-          `  ${m.validatorId}: { name: "${m.name}", commission: ${m.commission} },`
-      )
-      .join("\n");
-
     return NextResponse.json({
-      matched: matched.length,
-      unmatched: unmatched.length,
-      total: validators.length,
-      mapping: matched.sort((a, b) => a.validatorId - b.validatorId),
-      unmatchedValidators: unmatched,
-      tsCode: `export const VALIDATOR_NAMES: Record<number, ValidatorInfo> = {\n${tsCode}\n};`,
+      status: "success",
+      registrySize: Object.keys(registry).length,
+      dbValidators: allValidators.length,
+      updated,
+      alreadyNamed,
+      noMatch,
     });
   } catch (error) {
     return NextResponse.json(

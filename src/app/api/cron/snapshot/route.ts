@@ -9,7 +9,7 @@ import {
   calculateEpochReward,
 } from "@/lib/monad-rpc";
 import { eq, and } from "drizzle-orm";
-import { VALIDATOR_NAMES } from "@/data/validator-names";
+import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
 
 /**
  * Cron endpoint: Snapshots all validator accRewardPerToken values for the current epoch.
@@ -72,8 +72,11 @@ export async function GET(request: Request) {
     const validatorData = await getValidators(validatorIds);
     console.log(`[snapshot] Fetched data for ${validatorData.length} validators`);
 
-    // 5. Get MON price
-    const monPrice = await getMonPrice();
+    // 5. Get MON price + fresh validator registry
+    const [monPrice, nameRegistry] = await Promise.all([
+      getMonPrice(),
+      fetchFreshRegistry().catch(() => VALIDATOR_NAMES),
+    ]);
 
     // 6. Get previous epoch snapshots for delta computation
     const prevEpoch = epoch - 1;
@@ -110,7 +113,7 @@ export async function GET(request: Request) {
           // For now, use the commission from validator-names mapping if available
           const commissionRate = v.commission > 0
             ? Number(v.commission) / 100
-            : (VALIDATOR_NAMES[v.validatorId]?.commission ?? 0) / 100;
+            : (nameRegistry[v.validatorId]?.commission ?? 0) / 100;
 
           const commIncome = totalRewardMon * commissionRate;
           blockRewardsMon = totalRewardMon.toFixed(18);
@@ -132,8 +135,8 @@ export async function GET(request: Request) {
       totalNetworkStake += v.stakeMon;
 
       // Prepare validator metadata update
-      const name = VALIDATOR_NAMES[v.validatorId]?.name ?? null;
-      const commPct = VALIDATOR_NAMES[v.validatorId]?.commission ?? null;
+      const name = nameRegistry[v.validatorId]?.name ?? null;
+      const commPct = nameRegistry[v.validatorId]?.commission ?? null;
 
       validatorRows.push({
         validatorId: v.validatorId,

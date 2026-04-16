@@ -1,0 +1,1521 @@
+{
+  "1": {
+    "description": "Monad Foundation",
+    "logo": "https://bucket.monadinfra.com/monad.png",
+    "name": "Monad Foundation - mf-mainnet-val-tsw-fra-001",
+    "website": "https://www.monad.foundation/",
+    "x": "https://x.com/monad_xyz"
+  },
+  "10": {
+    "description": "Institutional-grade staking services and Web3 infrastructure provider. T&Cs apply, visit our website.",
+    "logo": "https://stakin-data.s3.eu-west-2.amazonaws.com/logo_black.png",
+    "name": "Stakin by The Tie",
+    "website": "https://stakin.com/",
+    "x": "https://x.com/StakinOfficial"
+  },
+  "100": {
+    "description": "Boutique Digital Assets Research, Infrastructure and Validators.",
+    "logo": "https://raw.githubusercontent.com/asxnres/brand_assets/refs/heads/main/logo_16in16in.png",
+    "name": "ASXN",
+    "website": "https://asxn.xyz/",
+    "x": "https://x.com/asxn_r"
+  },
+  "101": {
+    "description": "An independent validator from Switzerland",
+    "logo": "https://swissstarnode.tech/images/http___swissstarnode.png",
+    "name": "Swissstarnode",
+    "website": "https://swissstarnode.tech/",
+    "x": "https://x.com/swissstar_node"
+  },
+  "102": {
+    "description": "Polkachu is a leading blockchain infrastructure provider, offering secure and reliable services for various blockchain networks.",
+    "logo": "https://www.polkachu.com/images/polkachu.png",
+    "name": "polkachu.com",
+    "website": "https://www.polkachu.com",
+    "x": "https://x.com/polka_chu"
+  },
+  "103": {
+    "description": "Validatus - verifying blockchain entries on purely Enterprise Linux based systems with regular security audits. Stay safe. Stake with us.",
+    "logo": "https://res.cloudinary.com/djhalnnus/image/upload/v1724758514/Validatus-CI/avatar.png",
+    "name": "Validatus",
+    "website": "https://validatus.com/",
+    "x": "https://x.com/stakeingermany"
+  },
+  "104": {
+    "description": "Needlecast Validators - validators and smart contract engineers. Securing the interchain since 2021.",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/2a2cd28d7581adf8694975d0ec0d0705_360_360.jpg",
+    "name": "Needlecast",
+    "website": "https://envoys.io/",
+    "x": "https://x.com/frey_needlecast"
+  },
+  "105": {
+    "description": "We provide enterprise-grade, secure, high availability non-custodial staking services and developer tools",
+    "logo": "https://stakesquid.com/assets/stakesquid-logo.png",
+    "name": "StakeSquid",
+    "website": "https://stakesquid.com",
+    "x": "https://x.com/stakesquid"
+  },
+  "106": {
+    "description": "Professional blockchain infrastructure and validator services. Securing networks, building tools, and empowering the decentralized future.",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/a1600c5650b26f850982dac401912305_360_360.jpg",
+    "name": "HoodRun",
+    "website": "https://hoodrun.io",
+    "x": "https://x.com/hoodrunio"
+  },
+  "107": {
+    "description": "Highly Available Cloud-Native Validator Nodes with Remote Signing and Distributed Monitoring for Enhanced Security and Reliability",
+    "logo": "https://emberstake.xyz/logo.png",
+    "name": "EmberStake",
+    "website": "https://emberstake.xyz/",
+    "x": "https://x.com/Ember_Stake"
+  },
+  "108": {
+    "description": "Bare Metal Validators, Relayers, and RPC providers. Top tier infrastructure providers rooted in the Cosmos community.",
+    "logo": "https://blob.cosmosspaces.zone/logo.png",
+    "name": "CosmosSpaces",
+    "website": "https://cosmosspaces.zone/",
+    "x": "https://x.com/cosmos_spaces"
+  },
+  "109": {
+    "description": "Engaged in blockchain space since 2015. Professional validator and infrastructure provider.",
+    "logo": "https://s.getgems.io/nft/s/6762/67621bfc7c2e492fa0cd9697/nft/1245763.jpg",
+    "name": "zim.one",
+    "website": "https://zim.one/",
+    "x": "https://x.com/zimone91"
+  },
+  "11": {
+    "description": "Established in 2018, Pier Two is an Australian-based, APAC-focused institutional staking provider. Operating highly performant hybrid cloud and bare metal infrastructure, with zonal redundancy.",
+    "logo": "https://avatars.githubusercontent.com/u/125952310",
+    "name": "Pier Two",
+    "website": "https://piertwo.com/",
+    "x": "https://x.com/PierTwo_com"
+  },
+  "110": {
+    "description": "Supporting Blockchain Infrastructure",
+    "logo": "https://provalidator.com/images/logo.png",
+    "name": "Provalidator",
+    "website": "https://provalidator.com",
+    "x": "https://x.com/provalidator"
+  },
+  "111": {
+    "description": "High-performance validators",
+    "logo": "https://lux8.net/img/logo/star.svg",
+    "name": "lux8net",
+    "website": "https://lux8.net/",
+    "x": "https://x.com/lux8net"
+  },
+  "112": {
+    "description": "Proof Group is a web3 investment firm that has backed leading projects like Sui, Aptos, Farcaster, Ondo, and many others.  Our approach extends beyond just capital investment where we actively support ecosystems on the infrastructure side",
+    "logo": "https://raw.githubusercontent.com/proofgp/static/refs/heads/main/monad/logo-red.png",
+    "name": "Proof Group",
+    "website": "https://proofgroup.xyz",
+    "x": "https://x.com/proofgp"
+  },
+  "113": {
+    "description": "Crouton Digital is a distributed infrastructure company providing validator, RPC, and node management services across 45 Proof-of-Stake ecosystems. Our focus is on technological reliability, transparency, and building the core infrastructure layer of Web3.",
+    "logo": "https://crouton.digital/assets/brand/logos/crouton_digital_green_white_symbol.png",
+    "name": "CroutonDigital",
+    "website": "https://crouton.digital/",
+    "x": "https://x.com/CroutonDigital"
+  },
+  "114": {
+    "description": "Community-driven onchain analytics for nads, powered by Nodeinfra",
+    "logo": "https://raw.githubusercontent.com/nodeinfra/publicinfo/refs/heads/main/nadradar.png",
+    "name": "nadradar",
+    "website": "https://nadradar.com",
+    "x": "https://x.com/nad_radar"
+  },
+  "115": {
+    "description": "Bare metal validator and infra provider",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/2acc5b6081ed9b0c0a5ec1d5e52cd005_360_360.jpg",
+    "name": "r93AX Nodes",
+    "website": "https://x.com/R93ax",
+    "x": "https://x.com/R93ax"
+  },
+  "116": {
+    "description": "Flipside helps protocols grow intelligently--using AI agents and data science.",
+    "logo": "https://raw.githubusercontent.com/fsc-platform/blockchain-logos/main/flipside_icon.png",
+    "name": "Flipside Crypto",
+    "website": "https://flipsidecrypto.xyz",
+    "x": "https://x.com/flipsidecrypto"
+  },
+  "117": {
+    "description": "The official validator node from Coinage (Coinage.Media) and DAIC (https://daic.capital/telegram)",
+    "logo": "https://raw.githubusercontent.com/DAICers/coinage_x_daic/refs/heads/main/files/images/DAIC-CNG-Ape_360_moniker.png",
+    "name": "Coinage x DAIC",
+    "website": "https://daic.capital/",
+    "x": "https://x.com/coinage_x_daic"
+  },
+  "118": {
+    "description": "An institutional-grade staking provider delivering secure operations and superior performance for PoS networks",
+    "logo": "https://stakeware.xyz/logo.png",
+    "name": "Stakeware",
+    "website": "https://stakeware.xyz",
+    "x": "https://x.com/stakeware_xyz"
+  },
+  "119": {
+    "description": "Backed by crypto-native degens, CoinSummer is a trusted liquidity provider, staking validator, and AVS operator supporting the crypto and DeFi evolution.",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/9af13a1fc97728266b5c1e36fa12e305_360_360.jpg",
+    "name": "CoinSummer Labs",
+    "website": "https://coinsummer.io",
+    "x": "https://x.com/CoinSummerLabs"
+  },
+  "12": {
+    "description": "Secure Monad and shape its future by delegating to Chorus One, a highly secure and stable validator. By delegating, you agree to the terms of service at: https://chorus.one/tos",
+    "logo": "https://mirror.chorus.one/c1-logo-circle-1024x1024.png",
+    "name": "Chorus One",
+    "website": "https://chorus.one/",
+    "x": "https://x.com/ChorusOne"
+  },
+  "120": {
+    "description": "Stake with us!",
+    "logo": "https://raw.githubusercontent.com/Validatrium/public-uploads/main/validatrium1-1.png",
+    "name": "Validatrium",
+    "website": "https://validatrium.com/",
+    "x": "https://x.com/validatrium"
+  },
+  "121": {
+    "description": "Web3 platform for connecting talents and startups, helping them achieve high performance by providing tools for efficient workflow",
+    "logo": "https://talentum.id/images/avatar-orange.png",
+    "name": "Talentum Labs",
+    "website": "https://talentum.id",
+    "x": "https://x.com/TalentumID"
+  },
+  "122": {
+    "description": "Bare-metal blockchain infrastructure since 2020. Validators, nodes & stories powering Web3.Hunt for the best stake.",
+    "logo": "https://raw.githubusercontent.com/blockhunters-org/operator/refs/heads/main/logo.png",
+    "name": "BlockHunters \ud83c\udfaf",
+    "website": "https://blockhunters.org/",
+    "x": "https://x.com/blockhuntersOrg"
+  },
+  "123": {
+    "description": "P2P.org",
+    "logo": "https://cdn.p2p.org/p2p360_logo.png",
+    "name": "P2P.org \ud83d\udc99",
+    "website": "http://p2p.org/",
+    "x": "https://x.com/P2Pvalidator"
+  },
+  "124": {
+    "description": "Ledger by P2P.org",
+    "logo": "https://cdn.live.ledger.com/icons/ledger.png",
+    "name": "Ledger by P2P.org",
+    "website": "https://www.ledger.com/",
+    "x": "https://x.com/Ledger"
+  },
+  "125": {
+    "description": "Blockdaemon is the most battle-tested node provider for 70+ protocols allowing for an easy way to receive optimized rewards while minimizing risk and supporting the network.",
+    "logo": "https://raw.githubusercontent.com/Blockdaemon/media-kit/main/images/Blockdaemon-Source-Forge.png",
+    "name": "Blockdaemon",
+    "website": "https://www.blockdaemon.com/",
+    "x": "https://x.com/BlockdaemonHQ"
+  },
+  "126": {
+    "description": "a nad and an independent Monad validator",
+    "logo": "https://raw.githubusercontent.com/SuperX-X/images/refs/heads/main/pfp.png",
+    "name": "amonstaker",
+    "website": "https://amonstaker.xyz/",
+    "x": "https://x.com/STakamon"
+  },
+  "127": {
+    "description": "High performance validator by SOL Strategies. ISO27001 & SOC2 Type I certified",
+    "logo": "https://img.solstrategies.io/cogent.jpg",
+    "name": "Cogent \u2699\ufe0f  by SOL Strategies",
+    "website": "https://cogentcrypto.io",
+    "x": "https://x.com/Cogent_Crypto"
+  },
+  "128": {
+    "description": "High performance validator by SOL Strategies. ISO27001 & SOC2 Type I certified",
+    "logo": "https://laine.one/images/ci/icon.png",
+    "name": "Laine \u2764\ufe0f by SOL Strategies",
+    "website": "https://stake.laine.one/",
+    "x": "https://x.com/laine_sa_"
+  },
+  "129": {
+    "description": "Figment is the leading institutional staking provider serving more than 700 institutional clients with enterprise-grade validators on 40+ Proof of Stake protocols. We offer seamless staking integrations, audited infrastructure, robust rewards data, and more.",
+    "logo": "https://figment-logo.s3.ca-central-1.amazonaws.com/Figment-logo.png",
+    "name": "Figment",
+    "website": "https://figment.io",
+    "x": "https://x.com/Figment_io"
+  },
+  "13": {
+    "description": "kjnodes is trusted Proof of Stake validator and web3 infrastructure provider since 2021 we deliver top-notch secure and reliable infrastructure for crypto projects",
+    "logo": "https://services.kjnodes.com/assets/images/logos/kjnodes.png",
+    "name": "kjnodes",
+    "website": "https://kjnodes.com",
+    "x": "https://x.com/kjnodes"
+  },
+  "130": {
+    "description": "We provide infrastructure services, host non-profit developer-focused events, and offer user-friendly products for you to make the most of distributed value.",
+    "logo": "https://keybase.io/indie_validators/picture",
+    "name": "node101",
+    "website": "https://node101.io",
+    "x": "https://x.com/node_101"
+  },
+  "131": {
+    "description": "Gulf Labs - Blockchain innovation arm of Gulf Energy.",
+    "logo": "https://raw.githubusercontent.com/NunoyHaxxana/GL/refs/heads/main/Gulflabslogo.jpg",
+    "name": "GulfLabs",
+    "website": "www.gulflabs.xyz",
+    "x": "https://x.com/gulflabs"
+  },
+  "132": {
+    "description": "Ankr | The Fastest Web3 Infrastructure",
+    "logo": "https://www.ankr.com/_next/static/images/ankr-blue-logo-9cb21287573aa404ab083c44faee3db4.png",
+    "name": "Ankr",
+    "website": "https://www.ankr.com",
+    "x": "https://x.com/ankr"
+  },
+  "133": {
+    "description": "Bare metal staking, community support.",
+    "logo": "https://framerusercontent.com/images/7Zz5Y0ZD7koVSLRvf9o9mQCcpTQ.png",
+    "name": "H2O Nodes",
+    "website": "https://h2o-nodes.com/",
+    "x": "https://x.com/H2oNodes"
+  },
+  "134": {
+    "description": "Republic",
+    "logo": "https://pbs.twimg.com/profile_images/1797998012238548992/3hF576XA_400x400.jpg",
+    "name": "Republic",
+    "website": "https://www.republic.com",
+    "x": "https://x.com/joinrepublic"
+  },
+  "135": {
+    "description": "Tessellated builds and validates on proof of stake networks",
+    "logo": "https://tessellated-misc.s3.us-west-2.amazonaws.com/tessellated-logo.png",
+    "name": "Tessellated",
+    "website": "https://tessellated.io",
+    "x": "https://x.com/tessellated_io"
+  },
+  "136": {
+    "description": "High integrity validation and infrastructure services for web3 ecosystems",
+    "logo": "https://asymmetric-research-web-assets.s3.eu-west-1.amazonaws.com/AR-Logo.png",
+    "name": "Asymmetric Research",
+    "website": "https://asymmetric.re",
+    "x": "https://x.com/asymmetric_re"
+  },
+  "137": {
+    "description": "Hex Trust is a fully licensed digital asset custodian dedicated to providing solutions for protocols, foundations, financial institutions, and the Web3 ecosystem.",
+    "logo": "https://raw.githubusercontent.com/BCWResearch/bcw-logo/refs/heads/main/trust.jpg",
+    "name": "Hex Trust",
+    "website": "https://www.hextrust.com/",
+    "x": "https://x.com/Hex_Trust"
+  },
+  "138": {
+    "description": "HashKey Cloud, as a leading provider of global Web3 infrastructure and a core member of the HashKey Group, focuses on delivering professional, stable, and secure blockchain services to clients worldwide. Since 2018, we have been deeply committed to blockchain infrastructure technologies, with our staking services covering over 80 mainstream public chains and continuous exploration into Ethereum Layer2 and BTC Staking.\nWe have upgraded our product line as Web3 transitions from foundational technology to application development. Our new product line includes Professional Staking Service Designed Specifically for ETH ETF Issuers (ETF Staking Pro). We aim to meet the diverse needs of our clients and provide top-notch services to the global market.",
+    "logo": "https://raw.githubusercontent.com/HashKeyCloud/HashKey-Cloud-Logo/main/hashkey-cloud-white.png",
+    "name": "HashKey Cloud",
+    "website": "https://www.hashkey.cloud/",
+    "x": "https://x.com/HashKeyCloud"
+  },
+  "139": {
+    "description": "Founded in Switzerland, Blockscape has been actively engaged in staking technology since 2018. Today, we\u2019re expanding our focus to support institutions with secure and seamless access to digital assets.",
+    "logo": "https://blockscape.network/logo/logo-color.png",
+    "name": "blockscape",
+    "website": "https://blockscape.network",
+    "x": "https://x.com/BlockscapeLab"
+  },
+  "14": {
+    "description": "Blockchain infra-services provider, committed to support project from their early development stage to mainnet.",
+    "logo": "https://starlightnode.com/wp-content/uploads/2025/11/starlighticon.png",
+    "name": "StarlightNode",
+    "website": "https://starlightnode.com/",
+    "x": "https://x.com/Starlightnode"
+  },
+  "140": {
+    "description": "NTT DOCOMO GLOBAL will oversee the DOCOMO group's global business operations and drive integrated and agile strategies across diverse domains. Leveraging its global presence, the new subsidiary, working in collaboration with local partners, aims to enhance the quality of life for global customers by creating new lifestyles and contributing to structural changes in societies and industries worldwide.",
+    "logo": "https://hosted-assets-container-pbmv.s3.ca-central-1.amazonaws.com/NTT_DOCOMO_GLOBAL.png",
+    "name": "NTT DOCOMO GLOBAL",
+    "website": "https://www.docomoglobalgr.com/english",
+    "x": "https://x.com/nttdigital_io"
+  },
+  "141": {
+    "description": "High-performance Web3 infrastructure company that provides enterprise-grade RPC, validation, zkProver, and managed GPU compute services",
+    "logo": "https://raw.githubusercontent.com/artifactstaking/brand-assets/refs/heads/main/logos/ArtifactSystems_Logo.png",
+    "name": "Artifact",
+    "website": "https://artifact-systems.io",
+    "x": "https://x.com/artifactstaking"
+  },
+  "142": {
+    "description": "Fortifying crypto networks with Horcrux security, slash insurance, and open source contributions. Connect with us at https://linktr.ee/lavenderfive. SOC 2 Type 2 Certification in progress.",
+    "logo": "https://snapshots.lavenderfive.com/dropshare/LavenderFive_IconLarge.png",
+    "name": "Lavender.Five Nodes \ud83d\udc1d",
+    "website": "https://www.lavenderfive.com",
+    "x": "https://x.com/lavender_five"
+  },
+  "143": {
+    "description": "Non-Custodial Staking Provider with an in-house Web3 development arm. Support over 20 mainnets, including Aptos, Avail, Axelar, dYdX, Graph Network, and Sui with assets under delegation exceeding $170M",
+    "logo": "https://raw.githubusercontent.com/QuantNodeTech/identity/refs/heads/main/quantnode256.png",
+    "name": "QuantNode",
+    "website": "https://quantnode.tech/",
+    "x": "https://x.com/quantnodetech"
+  },
+  "144": {
+    "description": "Infrastructure for decentralized intelligence",
+    "logo": "https://raw.githubusercontent.com/cephalopodequipment/config/main/media/informal-systems-logo.png",
+    "name": "Informal Systems",
+    "website": "https://informal.systems",
+    "x": "https://x.com/informalinc"
+  },
+  "145": {
+    "description": "FP Validated is the validator arm of Four Pillars, an independent institutional research house based in Korea. Over the past three years, Four Pillars has published more than 500 multilingual research pieces in collaboration with 100+ partners and hosted 20+ institutional seminars for government agencies, policymakers, banks, and fintech companies, establishing itself as one of Asia's leading research firms. The FP Validated team brings together professional node operators and governance specialists with 3\u20136+ years of experience, alongside some of Asia's top protocol specialists. We contribute to the networks we support not only through reliable node operations, but also through active governance participation, research-driven insights, and ecosystem engagement. Leveraging this depth and our extensive enterprise and institutional relationships, we are rapidly building trusted, institutional-grade staking infrastructure across Asia.",
+    "logo": "https://raw.githubusercontent.com/brian-fp/fp-validated/main/fp-validated-symbol.png",
+    "name": "FP Validated",
+    "website": "https://4pillars.io/en/fp-validated",
+    "x": "https://x.com/FPvalidated"
+  },
+  "146": {
+    "description": "Asia's leading staking and RPC provider",
+    "logo": "https://static.rockx.com/img/logo/rockx-logo.png",
+    "name": "RockX",
+    "website": "https://www.rockx.com/",
+    "x": "https://x.com/rockx_official"
+  },
+  "147": {
+    "description": "AltLayer is a decentralized protocol for rollups, providing Restaked Rollups with enhanced security, decentralization, and interoperability.",
+    "logo": "https://files.altlayer.io/AltLayer-brand-kit/Token%20Icon/PNG/Token%20Icon_Purple_02.png",
+    "name": "AltLayer",
+    "website": "https://altlayer.io/",
+    "x": "https://x.com/alt_layer"
+  },
+  "148": {
+    "description": "Stake and grow your assets using Finoa Consensus Services's institutional-grade infrastructure.",
+    "logo": "https://raw.githubusercontent.com/Finoa-Consensus-Services/eigenlayer/main/logo.png",
+    "name": "Finoa Consensus Services",
+    "website": "https://finoa-fcs.io/products-delegated-staking/",
+    "x": "https://x.com/FinoaConsensus"
+  },
+  "149": {
+    "description": "Accelerating the future: Decentralized, low-latency and high-performance.",
+    "logo": "https://pbs.twimg.com/profile_images/1901618986070011905/F6Ix-Mbc_400x400.jpg",
+    "name": "Fountainhead",
+    "website": "https://fountainhead.network",
+    "x": "https://x.com/Fountainhead_zh"
+  },
+  "15": {
+    "description": "Where your stake stays yours, we just keep it running",
+    "logo": "https://raw.githubusercontent.com/StakerSpace/assets/main/logo.png",
+    "name": "Staker Space",
+    "website": "https://staker.space",
+    "x": "https://x.com/stakerspace"
+  },
+  "150": {
+    "description": "Node3Tech is a leading company specializing in blockchain infrastructure and decentralized validator technology, dedicated to providing high-performance and secure node operation and staking services. We actively participate in multiple mainstream network testnets and mainnet deployments, continuously driving the development and adoption of blockchain technology.",
+    "logo": "https://node3tech.io/wp-content/uploads/2025/06/logo2-2048x2048.png",
+    "name": "Node3Tech",
+    "website": "https://www.node3tech.io",
+    "x": "https://x.com/node3tech"
+  },
+  "151": {
+    "description": "Simply Staking is a trusted blockchain infrastructure provider offering secure staking services across multiple networks. With $1B+ TVL, we empower delegators with uptime reliability, seamless tools, and a commitment to innovation in the blockchain ecosystem.",
+    "logo": "https://simplystaking.com/wp-content/uploads/2025/07/Asset-1.webp",
+    "name": "Simply Staking",
+    "website": "https://www.simplystaking.com",
+    "x": "https://x.com/SimplyStaking"
+  },
+  "152": {
+    "description": "We are the leading staking service provider for blockchain projects. Join our community to help secure networks and earn rewards. Stake. Earn. Relax.",
+    "logo": "https://raw.githubusercontent.com/stakefish/stakefish-metadata/main/stakefish-logo.png",
+    "name": "stakefish",
+    "website": "https://stake.fish",
+    "x": "https://x.com/stakefish"
+  },
+  "153": {
+    "description": "Core infrastructure for the internet of value",
+    "logo": "https://xlabs.xyz/xlabs.png",
+    "name": "xLabs",
+    "website": "https://xlabs.xyz",
+    "x": "https://x.com/xLabsxyz"
+  },
+  "154": {
+    "description": "for \u2022 the \u2022 nads",
+    "logo": "https://raw.githubusercontent.com/vasdie/forthenads/main/forthenads-logo.png",
+    "name": "forthenads",
+    "website": "https://forthenads.xyz",
+    "x": "https://x.com/forthenads"
+  },
+  "155": {
+    "description": "Empowering hodlers to use their crypto in secure and novel ways",
+    "logo": "https://unit410.com/images/unit410-square-black.png",
+    "name": "Unit 410",
+    "website": "https://unit410.com/",
+    "x": "https://x.com/unit_410"
+  },
+  "156": {
+    "description": "Pharus is community-driven crypto research & education platform",
+    "logo": "https://www.thepharus.com/pharus-logo.png",
+    "name": "Pharus",
+    "website": "https://www.thepharus.com/",
+    "x": "https://x.com/thepharus"
+  },
+  "157": {
+    "description": "rskl is a long term monad contributor and part of synclab.team (this node maintained w/ snoopfear from synclab.team)",
+    "logo": "https://raw.githubusercontent.com/legalov/goldfinch-bot-fetcher/b7153c9d633121859f0b2abaf7374622444ee9e3/rskl.svg",
+    "name": "rskl",
+    "website": "https://rskl.xyz/",
+    "x": "https://x.com/rsklwtf"
+  },
+  "158": {
+    "description": "The go-to blockchain security firm for top teams, specializing in Cosmos, EVM, ZK, Move (Aptos and Sui). We solve your hardest security problems.\nTelegram: t.me/zellic_io",
+    "logo": "https://assets.zellic.io/pfp.jpg",
+    "name": "Zellic",
+    "website": "https://zellic.io/",
+    "x": "https://x.com/zellic_io"
+  },
+  "159": {
+    "description": "The Ultimate Blockchain Infrastructure Services Platform",
+    "logo": "https://infstones.com/assets/icons/footer_logo.svg",
+    "name": "InfStones",
+    "website": "https://infstones.com/",
+    "x": "https://x.com/InfStones"
+  },
+  "16": {
+    "description": "BlockVision is a leading provider of Web3 data and node services, specializing in explorer solutions, RPC nodes, indexing APIs, and validator services.",
+    "logo": "https://blockvision.org/logo-purple.svg",
+    "name": "MonadVision",
+    "website": "https://blockvision.org",
+    "x": "https://x.com/blockvisionhq"
+  },
+  "160": {
+    "description": "Galaxy is a digital asset and blockchain leader helping institutions, startups, and qualified individuals shape a changing economy. We provide platform solutions custom-made for a digitally native ecosystem.",
+    "logo": "https://dmpf98hz4x3ps.cloudfront.net/galaxy.png",
+    "name": "GalaxyDigital",
+    "website": "https://www.galaxy.com/",
+    "x": "https://x.com/galaxyhq"
+  },
+  "161": {
+    "description": "Animoca Brands is a Web3 leader that leverages blockchain to deliver digital property rights to consumers around the world to help establish the open metaverse and promote decentralization. We are one of the most active investors in Web3, with a portfolio of over 540 Web3 investments, including Yuga Labs, Axie Infinity, Polygon, Consensys, Magic Eden, Fireblocks, OpenSea, Dapper Labs, Yield Guild Games, and many more. Animoca Brands has been operating validators since 2020 and has expanded to +30 networks with an average uptime above 99.95%, not only are we contributing to the decentralisation of networks with professional in-house technical infrastructure and security capabilities, we also dedicate resources to invest in & grow the ecosystems we are a part of.",
+    "logo": "https://storage.googleapis.com/animoca-brands-public-content/img/AB360x360.png",
+    "name": "Animoca Brands",
+    "website": "https://www.animocabrands.com/",
+    "x": "https://x.com/animocabrands"
+  },
+  "162": {
+    "description": "Industry Leader. Trusted by 200,000 delegators since 2019. Over $200 million in staked assets across 30+ networks.",
+    "logo": "https://raw.githubusercontent.com/StakeSharkIo/logo/refs/heads/main/stakeshark%20logo%20512x512.png",
+    "name": "Stake Shark",
+    "website": "https://stakeshark.io",
+    "x": "https://x.com/stake_shark"
+  },
+  "163": {
+    "description": "Building crypto infrastructure for a brighter future. We are a leading, independent and values-driven operator since 2017.",
+    "logo": "https://raw.githubusercontent.com/Chainflow/chainflow-metadata/refs/heads/main/JPG/Chainflow_symbol_fullcolor.jpg",
+    "name": "Chainflow",
+    "website": "https://chainflow.io",
+    "x": "https://x.com/chainflowpos"
+  },
+  "164": {
+    "description": "Decentralized Infrastructure Network (DIN) is a marketplace protocol for web3 and AI infrastructure. Our AVS is now live on EigenCloud.",
+    "logo": "https://qluoylkpykklajrjkfdh.supabase.co/storage/v1/object/public/operator-logos/DIN_Logo-Circ_Orange.png",
+    "name": "DIN",
+    "website": "https://www.din.build/",
+    "x": "https://x.com/DINBuild"
+  },
+  "165": {
+    "description": "Kraken Exchange validator",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/9d5ddb4ba450ba6793592fef2d263b05_360_360.jpg",
+    "name": "Kraken",
+    "website": "https://www.kraken.com",
+    "x": "https://x.com/krakenfx/"
+  },
+  "166": {
+    "description": "Goldsky Mainnet Validator",
+    "logo": "https://goldsky.com/images/favicon.svg",
+    "name": "Goldsky",
+    "website": "https://goldsky.com/",
+    "x": "https://x.com/goldskyio"
+  },
+  "167": {
+    "description": "SenseiNode is the first institutional-level blockchain infrastructure provider in Latin America",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/426bcc7584e6acccf6db02517ea87905_360_360.jpg",
+    "name": "SenseiNode",
+    "website": "https://www.senseinode.com/",
+    "x": "https://x.com/senseinode"
+  },
+  "168": {
+    "description": "We operate high performance and resilient infrastructure for web3. Our servers are colocated in German data centers.",
+    "logo": "https://cdn.prod.website-files.com/5f699e8d6a7c1154451f214a/6840576566a3373a84dbfec2_Icon_White.png",
+    "name": "Staking Facilities",
+    "website": "https://stakingfacilities.com/",
+    "x": "https://x.com/StakingFac"
+  },
+  "169": {
+    "description": "Gemini provides secure, compliant, and resilient validator infrastructure - trusted by institutions and individuals to keep their assets safe and earning rewards.",
+    "logo": "https://www.gemini.com/static/images/gemini-orange@360x360.png",
+    "name": "Gemini",
+    "website": "https://gemini.com/staking",
+    "x": "https://x.com/Gemini"
+  },
+  "17": {
+    "description": "Cosmostation is an institutional-grade cryptocurrency infrastructure provider, managing billions of dollars across 70 protocols. Since 2018, we have served more than 500k users globally, providing products that enable protocols to scale.",
+    "logo": "https://raw.githubusercontent.com/cosmostation/chainlist/4deea8224437cdff96dc588d1671bd63b3cff1f3/resource/cosmostation/cosmostation_black_bg(256x256).png",
+    "name": "Cosmostation",
+    "website": "https://cosmostation.io/",
+    "x": "https://x.com/cosmostationvd"
+  },
+  "170": {
+    "description": "We provide the most reliable, high-performance blockchain infrastructure so that you can build with confidence.",
+    "logo": "https://triton-public-us.s3.amazonaws.com/logonew.svg",
+    "name": "Triton one",
+    "website": "https://triton.one",
+    "x": "https://x.com/triton_one/"
+  },
+  "171": {
+    "description": "Institutional staking powered by BitGo's secure infrastructure.",
+    "logo": "https://raw.githubusercontent.com/the-smooth-operator/test/refs/heads/main/Shield%20Logo%20Kockout_Blue-Light.png",
+    "name": "BitGo",
+    "website": "https://www.bitgo.com/",
+    "x": "https://x.com/BitGo"
+  },
+  "172": {
+    "description": "Reliable non-custodial Validator run by the industry leader - Allnodes",
+    "logo": "https://www.allnodes.com/assets/logo.png",
+    "name": "Allnodes",
+    "website": "https://www.allnodes.com",
+    "x": "https://x.com/allnodes"
+  },
+  "173": {
+    "description": "Strengthening Networks, Securing Futures",
+    "logo": "https://ipfs.filebase.io/ipfs/QmWs2W7dpw6AQpywNJbLgAKeG5KQWFnHocGQLLNKUEnBYL",
+    "name": "Nodeify",
+    "website": "https://nodeify.net",
+    "x": "https://x.com/nodeify_eth"
+  },
+  "174": {
+    "description": "Skills should increase with each new block produced. Peace to all!",
+    "logo": "https://raw.githubusercontent.com/endorphinestake/resources/main/media-kit/logo-endorphine.png",
+    "name": "Endorphine Stake",
+    "website": "https://endorphinestake.com",
+    "x": "https://x.com/endorphinestake"
+  },
+  "175": {
+    "description": "We are among the very few staking service entities emerging from Indian Blockchain ecosystem. We bring the experience of more than 20+ years in infrastructure space and 6+ years in Blockchain and Governance. Radical Truth and Transparency is at the core of our values, along with striving for excellence.",
+    "logo": "https://ledgerwise.io/img/icon1024.png",
+    "name": "Ledgerwise",
+    "website": "https://ledgerwise.io/",
+    "x": "https://x.com/ledgerwiseio"
+  },
+  "176": {
+    "description": "Efficient blockchain solutions",
+    "logo": "https://pub-storage.justnod.es/assets/justnodes_black.jpg",
+    "name": "JustNodes",
+    "website": "https://justnod.es/",
+    "x": "https://x.com/god_of_insights"
+  },
+  "177": {
+    "description": "Your Premier Web3 Partner in Japan and Asia.",
+    "logo": "https://pacific-meta-assets-01.s3.ap-northeast-1.amazonaws.com/public/pacificmetalogo.jpg",
+    "name": "Pacific Meta",
+    "website": "https://pacific-meta.co.jp/",
+    "x": "https://x.com/PacificMeta"
+  },
+  "178": {
+    "description": "High-performance Monad validator run by SpeedyNodes.",
+    "logo": "https://www.speedynodes.com/images/logo.png",
+    "name": "SpeedyNodes",
+    "website": "https://speedynodes.com",
+    "x": "https://twitter.com/speedynodes"
+  },
+  "179": {
+    "description": "Fresh, fast, and reliable \u2014 LeMonad brings sunny staking to Monad.",
+    "logo": "https://lemonad.pro/logo.png",
+    "name": "LeMonad",
+    "website": "https://lemonad.pro/",
+    "x": "https://x.com/LeMonad_pro"
+  },
+  "18": {
+    "description": "An institutional-grade staking provider delivering secure operations and superior performance for PoS networks",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/09c7999790959bbbd85b7007adf70205_360_360.jpg",
+    "name": "deNodes",
+    "website": "https://denodes.io/",
+    "x": "https://x.com/denodes_io"
+  },
+  "180": {
+    "description": "",
+    "logo": "",
+    "name": "02568b7f00ec34803b089f614f27cd7641e0d3382ecbdfd9cc80bb599a259723dd",
+    "website": "",
+    "x": ""
+  },
+  "181": {
+    "description": "All Onchain Liquidity in one API",
+    "logo": "https://li.fi/favicon.svg",
+    "name": "LI.FI",
+    "website": "https://li.fi/",
+    "x": "https://x.com/lifiprotocol"
+  },
+  "182": {
+    "description": "Web3 Venture Studio focused on scalable yield and infrastructure products.",
+    "logo": "https://wcs-logos.s3.us-east-1.amazonaws.com/wcs-logo-dark-bg.png",
+    "name": "Water Cooler Studios",
+    "website": "https://www.wcs.tech",
+    "x": "https://x.com/0xwatercooler"
+  },
+  "183": {
+    "description": "Forest Staking is a team of military and civilian trained cybersecurity engineers, Linux admins and blockchain enthusiasts",
+    "logo": "https://raw.githubusercontent.com/ForestStaking/Forest_Staking_Logo/refs/heads/main/Forest_Staking_Logo_main.jpg",
+    "name": "Forest Staking",
+    "website": "https://foreststaking.com",
+    "x": "https://x.com/foreststaking"
+  },
+  "184": {
+    "description": "Designed from the ground up to scale globally and operate reliably.",
+    "logo": "https://drive.google.com/uc?export=download&id=14YU0oQK4DlwaKvMYdKF8Wa6GtWTEx3RD",
+    "name": "smallstreet",
+    "website": "https://smallstreet.com",
+    "x": "https://x.com/chamonster"
+  },
+  "185": {
+    "description": "Kamunagi is a validator for a startup oracle project. It is developed in C/C++ and is extremely fast, creating strong synergy with high-performance blockchain networks.",
+    "logo": "https://www.kamunagi.xyz/logo/kamunagi.png",
+    "name": "Kamunagi",
+    "website": "https://kamunagi.xyz/",
+    "x": "https://x.com/kamunagi_xyz"
+  },
+  "186": {
+    "description": "Enabling Access to Global Assets",
+    "logo": "https://pbs.twimg.com/profile_images/1758246030796058624/2JrJRxQ6_400x400.jpg",
+    "name": "Etherfuse",
+    "website": "https://www.etherfuse.com/",
+    "x": "https://x.com/etherfuse"
+  },
+  "187": {
+    "description": "Enterprise-grade staking made easy. Stake your treasury directly, or bring staking to your users through our whitelabel product.",
+    "logo": "https://prod-validators.nyc3.digitaloceanspaces.com/jv4jjydgv6uiy8m376t96frfc7g3",
+    "name": "Kiln1",
+    "website": "https://kiln.fi",
+    "x": "https://x.com/Kiln_finance"
+  },
+  "188": {
+    "description": "AltLayer is a decentralized protocol for rollups, providing Restaked Rollups with enhanced security, decentralization, and interoperability.",
+    "logo": "https://files.altlayer.io/AltLayer-brand-kit/Token%20Icon/PNG/Token%20Icon_Purple_02.png",
+    "name": "AltLayer",
+    "website": "https://altlayer.io/",
+    "x": "https://x.com/alt_layer"
+  },
+  "189": {
+    "description": "Cointelegraph Decentralization Guardians project is dedicated to securing and supporting blockchain networks by operating reliable and high-performing validators.",
+    "logo": "https://raw.githubusercontent.com/oneanother/misc/main/ctdg_logo.png",
+    "name": "Cointelegraph Decentralization Guardians",
+    "website": "https://cointelegraph-guardians.com/",
+    "x": "https://x.com/CTDG_DevHub"
+  },
+  "19": {
+    "description": "Natsai.xyz manages lean, non-custodial validator operations, ensuring robust and efficient blockchain network security.",
+    "logo": "https://avatars.githubusercontent.com/u/197120902?v=4",
+    "name": "Natsai",
+    "website": "https://www.natsai.xyz/",
+    "x": "https://x.com/natsaiou"
+  },
+  "190": {
+    "description": "High-performance Monad validator run by SpeedyNodes.",
+    "logo": "https://www.speedynodes.com/images/logo.png",
+    "name": "SpeedyNodes",
+    "website": "https://speedynodes.com",
+    "x": "https://twitter.com/speedynodes"
+  },
+  "191": {
+    "description": "Reliable PoS network operations. Secure validator infrastructure. Autonomous AI agent deployments. Intelligent automation.",
+    "logo": "https://raw.githubusercontent.com/infobitctrl/Brand/main/BitCtrl_logo.png",
+    "name": "BitCtrl",
+    "website": "https://www.bitctrl.io/",
+    "x": "https://x.com/BitCtrl_io"
+  },
+  "192": {
+    "description": "BlockPro is an independent, community-driven validator focused on reliable infrastructure, decentralization, and long-term network support",
+    "logo": "https://i.ibb.co/WvpYcMr4/logo.png",
+    "name": "BlockPro",
+    "website": "https://block-pro.net/",
+    "x": "https://x.com/BlockPro_"
+  },
+  "193": {
+    "description": "No bells, no whistles. Just a high-performance node dedicated to securing the Monad ecosystem with maximum uptime and low latency.",
+    "logo": "https://raw.githubusercontent.com/DEUSVULTXYZ/logo/refs/heads/main/logo.png",
+    "name": "JustANode",
+    "website": "https://t.me/DEUSxTG",
+    "x": "https://x.com/0x_Deus"
+  },
+  "194": {
+    "description": "Fast runners of blockchain",
+    "logo": "https://raw.githubusercontent.com/kookin/paradise-nodes-public/main/pn-logo.png",
+    "name": "Paradise Nodes",
+    "website": "https://www.paradisenodes.xyz/",
+    "x": "https://x.com/paradisenodes"
+  },
+  "195": {
+    "description": "Top Uptime Institutional-Grade Infrastructure | Selected by Stride & ICF in the Cosmos Hub | Follow our educational content: https://www.youtube.com/@cosmicvalidator",
+    "logo": "https://raw.githubusercontent.com/CosmicValidator/profile/main/cosmic-validator.png",
+    "name": "Cosmic Validator",
+    "website": "https://cosmicvalidator.com",
+    "x": "https://x.com/CosmicValidator"
+  },
+  "196": {
+    "description": "Unity Nodes provides professional node validation services, ensuring high uptime, security, and performance for delegators and ecosystem.",
+    "logo": "https://pbs.twimg.com/profile_images/2037205374588383232/m3NIdGye_400x400.jpg",
+    "name": "Unity Nodes",
+    "website": "https://unitynodes.com",
+    "x": "https://x.com/UnityNodes"
+  },
+  "197": {
+    "description": "We are more than just a validator! We are here to contribute!",
+    "logo": "https://user-images.githubusercontent.com/38581319/171294493-bf8b243c-94b5-4492-82bd-a1e9aed93420.png",
+    "name": "POSTHUMAN",
+    "website": "https://www.posthuman.digital/",
+    "x": "https://x.com/POSTHUMAN_DVS"
+  },
+  "198": {
+    "description": "Enterprise-grade staking infrastructure and validation for cutting-edge privacy and high-performance networks",
+    "logo": "https://raw.githubusercontent.com/metatarzxyz/public-info/refs/heads/main/images/logo.jpg",
+    "name": "Metatarz",
+    "website": "https://metatarz.xyz",
+    "x": "https://x.com/metatarzxyz"
+  },
+  "199": {
+    "description": "TServices provides secure, decentralized, and high-performance blockchain validation, engineered for low latency and maximum reliability.",
+    "logo": "https://tservices.es/logo.png",
+    "name": "TServices",
+    "website": "https://tservices.es/",
+    "x": ""
+  },
+  "2": {
+    "description": "Monad Foundation",
+    "logo": "https://bucket.monadinfra.com/monad.png",
+    "name": "Monad Foundation - mf-mainnet-val-lsn-jfk-011",
+    "website": "https://www.monad.foundation/",
+    "x": "https://x.com/monad_xyz"
+  },
+  "20": {
+    "description": "Lemniscap is an investment firm specialising in investments in emerging cryptoassets and blockchain startups.",
+    "logo": "https://static.lemniscap.com/assets/icon.png",
+    "name": "Lemniscap",
+    "website": "https://lemniscap.com/",
+    "x": "https://x.com/lemniscap"
+  },
+  "200": {
+    "description": "Stake with certainty. Stake with Phase",
+    "logo": "https://gateway.irys.xyz/3eaHpuhY2wygLvBytm3xXTkHp96KEmMEc8Et7tGXnAeC",
+    "name": "Phase Stake",
+    "website": "https://phase.cc/",
+    "x": "https://x.com/phase_"
+  },
+  "201": {
+    "description": "Strengthening Networks, Securing Futures",
+    "logo": "https://ipfs.filebase.io/ipfs/QmWs2W7dpw6AQpywNJbLgAKeG5KQWFnHocGQLLNKUEnBYL",
+    "name": "Nodeify",
+    "website": "https://nodeify.net",
+    "x": "https://x.com/nodeify_eth"
+  },
+  "202": {
+    "description": "MSC-Industries operates reliable infrastructure backed by many years of experience running production validators across multiple blockchain ecosystems",
+    "logo": "https://img.freepik.com/premium-vector/modern-msc-logo-design-letter-msc-minimalist-professional-versatile-branding-icon-business-identity_1101554-99983.jpg",
+    "name": "MSC-Industries",
+    "website": "",
+    "x": ""
+  },
+  "203": {
+    "description": "Blocash mainnet validator",
+    "logo": "https://raw.githubusercontent.com/blocashmain/blocash-image/refs/heads/main/blocashmain.jpeg",
+    "name": "Blocash",
+    "website": "https://x.com/blocashweb",
+    "x": "https://x.com/blocashweb"
+  },
+  "204": {
+    "description": "LootGO is a walk to earn mobile app that turns your steps into a real-world crypto treasure hunt.",
+    "logo": "https://lootgo.app/app-icon.png",
+    "name": "LootGO",
+    "website": "https://lootgo.app/",
+    "x": "https://x.com/lootgo_official"
+  },
+  "205": {
+    "description": "Operational Excellence on Bare Metal",
+    "logo": "https://user-images.githubusercontent.com/17627585/237486665-a3ff51b5-b39a-4bd8-ac98-1631f46f0a9c.png",
+    "name": "Obelisk",
+    "website": "https://obelisk.sh/",
+    "x": "https://x.com/wizardfiction"
+  },
+  "206": {
+    "description": "Crypto Infrastructure, Redefined",
+    "logo": "https://i.ibb.co/v6ZDhGL4/pfp-black.png",
+    "name": "Decentra",
+    "website": "https://decentra.cloud/",
+    "x": "https://x.com/Decentra_Cloud"
+  },
+  "207": {
+    "description": "Trusted Partner in Blockchain Validation Services",
+    "logo": "https://raw.githubusercontent.com/unityfarmschain/unityfarms-assets/refs/heads/main/logo.jpg",
+    "name": "unityfarms",
+    "website": "https://unityfarms.cloud/",
+    "x": ""
+  },
+  "208": {
+    "description": "We do staking for a living",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/6a0e76c3a3df9ae1bcf28ab2ca1c0e05_360_360.jpg",
+    "name": "Inotel",
+    "website": "https://inotel.ro",
+    "x": ""
+  },
+  "209": {
+    "description": "GlobalStake's next-generation institutional staking offers SOC-2 security, bare-metal infrastructure, and carbon-negative performance. Our independent data centers enhance risk management and optimize service delivery, driving results for clients worldwide.",
+    "logo": "https://raw.githubusercontent.com/Global-Stake/brand-assets/0fd5d84ee0bca02c3e34b92cddb0a55702144973/GlobalStake-globe-white.png",
+    "name": "GlobalStake",
+    "website": "https://globalstake.io/",
+    "x": "https://x.com/globalstake"
+  },
+  "21": {
+    "description": "We empower Web3 projects to build and scale innovative decentralized solutions.",
+    "logo": "https://storage.googleapis.com/redundex.com/logo/compact-logo.png",
+    "name": "Redundex",
+    "website": "https://www.redundex.com",
+    "x": "https://x.com/RedundexHQ"
+  },
+  "210": {
+    "description": "Infrastructure designed for the future of decentralized networks.",
+    "logo": "https://raw.githubusercontent.com/validexisinfra/logo/main/VALIDEXIS.png",
+    "name": "VALIDEXIS",
+    "website": "https://validexis.com/",
+    "x": "https://x.com/validexis"
+  },
+  "211": {
+    "description": "Powering decentralized applications with data services and validation",
+    "logo": "https://avatars.githubusercontent.com/u/105833344",
+    "name": "Data Nexus",
+    "website": "https://data.nexus/",
+    "x": "https://x.com/data_nexus"
+  },
+  "212": {
+    "description": "Innovative staking provider and relayer for blockchain ecosystems. Reliable nodes, multi-network solutions, and 24/7 support.",
+    "logo": "https://raw.githubusercontent.com/chaindigital/logo/main/CD.png",
+    "name": "CHAIN DIGITAL",
+    "website": "https://chaindigital.tech/",
+    "x": "https://x.com/ChainEcoSignals"
+  },
+  "213": {
+    "description": "Powering the blockchain with expert node management and staking solutions. Nodes you can trust, staking you can grow with.",
+    "logo": "https://raw.githubusercontent.com/AiNodes-Tech/brand-kit/refs/heads/main/logos/ainodes-logo.png",
+    "name": "AiNodes",
+    "website": "https://ainodes.tech",
+    "x": "https://x.com/ainodestech"
+  },
+  "214": {
+    "description": "Since 2019, Lunar Strategy has served as a node validator and marketing firm in crypto, supporting growth with creative campaigns, content, and creators strategies \u2014 alongside reliable validation to enhance project trust.",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/a9fcfdbe58f2876b7610824f84725205_360_360.jpg",
+    "name": "Lunar Strategy",
+    "website": "https://www.lunarstrategy.com/",
+    "x": "https://x.com/LunarStrategy"
+  },
+  "215": {
+    "description": "Battle-tested validator. Fast blocks, no excuses.",
+    "logo": "https://avatars.githubusercontent.com/u/248190589",
+    "name": "Pointgroup",
+    "website": "https://github.com/pointgroup-labs/",
+    "x": "https://x.com/pointgrouplabs"
+  },
+  "216": {
+    "description": "Delivering performance, stability, and true decentralization.",
+    "logo": "https://raw.githubusercontent.com/astrosynx/Logo/main/Astrosynx_logo.jpg",
+    "name": "Astrosynx",
+    "website": "https://astrosynx.com/",
+    "x": "https://x.com/AstrosynxV"
+  },
+  "217": {
+    "description": "InfraSingularity is a pioneering investor and builder dedicated to advancing the Web3 ecosystem.",
+    "logo": "https://raw.githubusercontent.com/Infrasingularity-com/Brand-Kits/refs/heads/main/Copy_of_IS-logo-square.png",
+    "name": "InfraSingularity",
+    "website": "https://infrasingularity.com/",
+    "x": "https://x.com/isinfra"
+  },
+  "218": {
+    "description": "LuckyReseach Labs Pro Staking Validator & Moderator. Stake with us! Generate a yield and your tokens stays on your wallet! Thank you",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/a909f3ff9c8d6f39faecce3db77f6605_360_360.jpg",
+    "name": "LuckyResearch Labs",
+    "website": "https://luckyresearch.org",
+    "x": "https://x.com/LuckyResearchVN"
+  },
+  "22": {
+    "description": "Highly secure professional validator across 50+ chains - offering a full refund for any downtime slashing - Reach out to us at contact@enigma-validator.com",
+    "logo": "https://raw.githubusercontent.com/Enigma-Validator/enigma-assets/refs/heads/main/enigma-logo.png",
+    "name": "Enigma",
+    "website": "https://enigma-validator.com/",
+    "x": "https://x.com/enigmavalidator"
+  },
+  "23": {
+    "description": "Nansen is a leading on-chain analytics platform founded in 2020, and is now one of the most trusted names in crypto, serving traders and institutions.Disclaimer: delegating comes with slashing risks",
+    "logo": "https://raw.githubusercontent.com/nansen-ai/staking-brand-assets/main/nansen_logo.svg",
+    "name": "Nansen | Stake to Stack Points",
+    "website": "https://www.nansen.ai",
+    "x": "https://x.com/nansen_ai"
+  },
+  "24": {
+    "description": "Distributed multi-chain acceleration layer.",
+    "logo": "https://static.blockpi.io/blockpi-logo-mini.png",
+    "name": "BlockPI",
+    "website": "https://blockpi.io/",
+    "x": "https://x.com/RealBlockPI"
+  },
+  "25": {
+    "description": "Twinstake is an institutional-grade, non-custodial staking provider designed and built in collaboration with leaders in the digital assets space",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/cd5ed2719db24ffa391fc092e3a1e105_360_360.jpg",
+    "name": "Twinstake",
+    "website": "https://www.twinstake.com/",
+    "x": "https://x.com/twinstake_io"
+  },
+  "26": {
+    "description": "Secure Network With Institutional Grade Solution.Leading in South East Asia, ContributionDAO seamlessly blend innovation with stringent security, offering an unrivaled staking experience through seamless Institutional-grade solutions.",
+    "logo": "https://raw.githubusercontent.com/Contribution-DAO/contributiondao/main/brand-assets/cdao-logo-white.png",
+    "name": "ContributionDAO",
+    "website": "https://staking.contributiondao.com/",
+    "x": "https://x.com/contributedao"
+  },
+  "27": {
+    "description": "Farm-to-table, non-custodial proof-of-stake services and products powered by the premiere DAO-owned enterprise with 1k+ stakeholders. Zero VCs, zero seed oils.",
+    "logo": "https://pbs.twimg.com/profile_images/1932719728662831104/Rmp-zeGO_400x400.jpg",
+    "name": "ValiDAO",
+    "website": "https://validao.xyz/",
+    "x": "https://x.com/validaoxyz"
+  },
+  "28": {
+    "description": "NodeStake is a professional validator and infrastructure provider, delivering secure, high-performance blockchain services for next-generation decentralized networks",
+    "logo": "https://raw.githubusercontent.com/nodestake/brand-kit/refs/heads/main/logo.png",
+    "name": "NodeStake",
+    "website": "https://nodestake.org",
+    "x": "https://x.com/NodeStake_top"
+  },
+  "29": {
+    "description": "Securing networks with trusted nodes",
+    "logo": "https://cdn.prod.website-files.com/675ea9b16a5b05d66c7e98ea/67b636ea0f3e9d5c778b16dd_logo.png",
+    "name": "Node.Monster",
+    "website": "https://node.monster/",
+    "x": "https://x.com/nodemonste"
+  },
+  "3": {
+    "description": "High-performance validator built for the Monad community, reinvesting into open data.",
+    "logo": "https://www.gmonads.com/logo.png",
+    "name": "gmonads.com",
+    "website": "https://www.gmonads.com/",
+    "x": "https://x.com/gmonads"
+  },
+  "30": {
+    "description": "Reliable validator by Coha05, part of Vietnads - supporting decentralization and growth across Monad and beyond.",
+    "logo": "https://raw.githubusercontent.com/Coha05/libary/refs/heads/main/spider-node.png",
+    "name": "Spider Node \ud83d\udd77\ufe0f",
+    "website": "https://spidernode.net/",
+    "x": "hhttps://x.com/spider_node_"
+  },
+  "31": {
+    "description": "StakingCabin offer enterprise-level, highly secure infrastructure services for public blockchain protocols.",
+    "logo": "https://cdn.jsdelivr.net/gh/stakingcabin/stakingcabin@main/assets/logo512.png",
+    "name": "StakingCabin",
+    "website": "https://www.stakingcabin.com",
+    "x": "https://x.com/StakingCabin"
+  },
+  "32": {
+    "description": "Reliable validator securing over $2B. Web3.0 infrastructure and service provider.",
+    "logo": "https://www.kukis-global.com/assets/img/kg-logo.png",
+    "name": "Kukis Global",
+    "website": "https://kukis-global.com",
+    "x": "https://x.com/kukisglobal"
+  },
+  "33": {
+    "description": "Staketab is engaged in professional validation in various blockchain networks. We develop fast and high-quality explorers and other ecosystem tools.",
+    "logo": "https://brand-staketab.s3.eu-north-1.amazonaws.com/staketab/validator.png",
+    "name": "Staketab",
+    "website": "https://staketab.com",
+    "x": "https://x.com/staketab"
+  },
+  "34": {
+    "description": "Ghost is a research-and-development firm focused on infrastructure and data. We built GhostGraph, the first indexer that lets you write your handlers in Solidity.",
+    "logo": "https://pub-e803df4321b2451e8a9a7c0807d6da11.r2.dev/ghost_logo.png",
+    "name": "Ghost",
+    "website": "https://tryghost.xyz",
+    "x": "https://x.com/0xGhostLogs"
+  },
+  "35": {
+    "description": "We provide refined perspective for Web3 pioneers. Founded in 2019, DeSpread is a consulting firm specializing in Web3 & blockchain. It actively contributes to Web3\u2019s mass adoption by supporting the growth of various startups and protocols.",
+    "logo": "https://raw.githubusercontent.com/DeSpread/despread-assets/main/logo.png",
+    "name": "DeSpread",
+    "website": "https://despread.io/",
+    "x": "https://x.com/despreadlabs"
+  },
+  "36": {
+    "description": "A joint validator by Kairos Research and Firstset",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/f386785ed2c920380e549cdb164c6805_360_360.jpg",
+    "name": "Kairos Research X Firstset",
+    "website": "https://kairoscrypto.substack.com/",
+    "x": "https://x.com/Kairos_Res"
+  },
+  "37": {
+    "description": "Stake at the lake!",
+    "logo": "https://i.postimg.cc/fTHTBc00/LAKE-4.png",
+    "name": "LakeStake",
+    "website": "https://www.lakestake.io/",
+    "x": "https://x.com/lakestakeio"
+  },
+  "38": {
+    "description": "We operate nodes for next-generation blockchain networks and we are committed to support the decentralisation movement forward",
+    "logo": "https://images.moonlet.cloud/moonlet.png",
+    "name": "Moonlet",
+    "website": "https://moonlet.io/",
+    "x": "https://x.com/moonlet_hq"
+  },
+  "39": {
+    "description": "Trustworthy Validator",
+    "logo": "https://pbs.twimg.com/profile_images/1661349922988326912/84iOjM9W_400x400.jpg",
+    "name": "StakeCraft",
+    "website": "https://stakecraft.com",
+    "x": "https://x.com/stakecraft"
+  },
+  "4": {
+    "description": "Provides secure validation services for dPoS networks",
+    "logo": "https://s3.ap-northeast-2.amazonaws.com/bharvest.io/logo/B-Harvest-Logo-x256.png",
+    "name": "B-Harvest",
+    "website": "https://bharvest.io",
+    "x": "https://x.com/B__Harvest"
+  },
+  "40": {
+    "description": "dteam.tech provides reliable infrastructure to support and scale projects effectively, along with building essential tools tailored for project communities, node operators and developers.",
+    "logo": "https://raw.githubusercontent.com/DTEAMTECH/identity/refs/heads/main/logo.png",
+    "name": "DTEAM",
+    "website": "https://dteam.tech/",
+    "x": "https://x.com/dteamtech"
+  },
+  "41": {
+    "description": "Enterprise-level infrastructure and state-of-art tools for node operators, developers and analysts.",
+    "logo": "https://server-4.itrocket.net/logo/itrocket_logo.png",
+    "name": "ITRocket",
+    "website": "https://itrocket.net/",
+    "x": "https://x.com/itrocket_team"
+  },
+  "42": {
+    "description": "Secure Non-Custodial Staking for PoS Blockchain Projects. We run reliable and secure validators and nodes for different blockchain protocols. Come stake with us!",
+    "logo": "https://pathrocknetwork.org/images/logo/prn.png",
+    "name": "PathrockNetwork",
+    "website": "https://pathrocknetwork.org/",
+    "x": "https://x.com/pathrock2"
+  },
+  "43": {
+    "description": "P-OPS TEAM is a decentralized organization providing you with validation and staking services, blockchain consultation, growth acceleration and investment capital for innovative Web 3.0 projects.",
+    "logo": "https://pops.one/img/pops-logo.png",
+    "name": "P-OPS Team",
+    "website": "https://www.pops.one",
+    "x": "https://x.com/POpsTeam1"
+  },
+  "44": {
+    "description": "Reliable, high-performance validator for Monad\u2019s parallel EVM. We run secure & optimized nodes to support 10k+ TPS.",
+    "logo": "https://wiki.blackblocks.io/public/logo.svg",
+    "name": "BlackBlocks",
+    "website": "https://blackblocks.io",
+    "x": "https://x.com/BlackBlocks_io"
+  },
+  "45": {
+    "description": "Imperator empowers investors and token holders to effortlessly secure blockchain networks through non-custodial staking",
+    "logo": "https://api.imperator.co/projects/logos/imperator.png",
+    "name": "Imperator.co",
+    "website": "https://imperator.co",
+    "x": "https://x.com/imperator_co"
+  },
+  "46": {
+    "description": "High-performance validator promoting network decentralization by operating from a unique location. Staking Rewards Verified staking provider.",
+    "logo": "https://spectrumstaking.net/images/Spst_white_512x512.png",
+    "name": "Spectrum Staking",
+    "website": "https://spectrumstaking.net/",
+    "x": "https://x.com/SpectrumStaking"
+  },
+  "47": {
+    "description": "We create an outstanding social experience for members by curating our community into the Web3 destination of choice.",
+    "logo": "https://prod-validators.nyc3.digitaloceanspaces.com/wmbunykyzah9rvnwdrup7drqs3dv",
+    "name": "Dead King Society",
+    "website": "https://www.deadkingsociety.io/",
+    "x": "https://x.com/DeadKingSociety"
+  },
+  "48": {
+    "description": "Guru of non-custodial staking. Professional node running, low fees, best uptime and 24/7 customer support.",
+    "logo": "https://nodes.guru/kit/mascot-light.svg",
+    "name": "Nodes.Guru",
+    "website": "https://nodes.guru",
+    "x": "https://x.com/NodesGuru"
+  },
+  "49": {
+    "description": "FTP Tech is a trusted, infrastructure provider and active validator across multiple modular and app-specific chains with a focus on high performance, reliability and long-term alignment with the communities we support",
+    "logo": "https://cdn.ftptech.xyz/logo.jpeg",
+    "name": "FTP",
+    "website": "https://ftptech.xyz",
+    "x": "https://x.com/FTPwhatsoever"
+  },
+  "5": {
+    "description": "Guaranteed availability and up-time backed by a professional blockchain infrastructure team.",
+    "logo": "https://static.alchemyapi.io/logos/alchemy-mark-on-light.png",
+    "name": "Alchemy",
+    "website": "https://www.alchemy.com",
+    "x": "https://x.com/Alchemy"
+  },
+  "50": {
+    "description": "Noders LLC is a premier provider of institutional-grade Validator Services and cutting-edge Web3 Development.",
+    "logo": "https://raw.githubusercontent.com/noders-team/brand-kit/refs/heads/main/logo/noders_logo_256.png",
+    "name": "[NODERS]",
+    "website": "https://noders.team",
+    "x": "https://x.com/NODERS_TEAM"
+  },
+  "51": {
+    "description": "We run high-performance and transparent validators.",
+    "logo": "https://theworkshop.sh/logo-dark.svg",
+    "name": "The Workshop",
+    "website": "https://theworkshop.sh",
+    "x": "https://x.com/hoanhan101"
+  },
+  "52": {
+    "description": "Thailand's Largest Web3 Ecosystem Builder",
+    "logo": "https://cdn.cryptomind.group/logo.png",
+    "name": "Cryptomind",
+    "website": "https://cryptomind.group",
+    "x": "https://x.com/cryptomindgroup"
+  },
+  "53": {
+    "description": "d10s operates bare-metal validators committed to reliability, uptime, and stability",
+    "logo": "https://drive.google.com/u/0/drive-viewer/AKGpiha5NHYj3lffLhHgWFXtrP6vPCiVZYEeN3-njhy5p4c5nqNh_kpqGRy21myLngwkUgf122qdx2ALuk_lO6G5631ZNpEWFXOY9ko=s1600-rw-v1",
+    "name": "d10s",
+    "website": "https://d10s.fi/",
+    "x": ""
+  },
+  "54": {
+    "description": "Chainode Tech is your reliable Swiss-based partner for institutional-grade non-custodial staking and validation services",
+    "logo": "https://chainode.tech/img/logo.svg",
+    "name": "Chainode Tech",
+    "website": "https://chainode.tech/",
+    "x": "https://x.com/ChainodeTech"
+  },
+  "55": {
+    "description": "A secure, low-fee, and trusted non-custodial provider for PoS protocols, operating validator nodes to support diverse blockchain networks with reliability and transparency",
+    "logo": "https://starduststaking.com/stardust_logo-4.png",
+    "name": "Stardust Staking",
+    "website": "https://starduststaking.com",
+    "x": "https://x.com/StardustStaking"
+  },
+  "56": {
+    "description": "Professional validator, staking and infrastructure provider. More than 50 networks contributed. With L0ve.",
+    "logo": "https://res.cloudinary.com/dxwoj0bkm/image/upload/v1759235874/logo_big_jpqej3.svg",
+    "name": "L0vd",
+    "website": "https://l0vd.com/",
+    "x": "https://x.com/L0vdstaking"
+  },
+  "57": {
+    "description": "French Crypto Investment Provider",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/3fcc4caebb2c8e949829a7b090be3805_360_360.jpg",
+    "name": "Meria",
+    "website": "https://www.meria.com/",
+    "x": "https://x.com/Meria_Finance"
+  },
+  "58": {
+    "description": "Technology-driven team contributing to a decentralized ecosystem",
+    "logo": "https://storage.delightlabs.io/images/DELIGHTLABS-Symbol-10px.png",
+    "name": "DELIGHT",
+    "website": "https://delightlabs.io/",
+    "x": "https://x.com/delightlabs_io"
+  },
+  "59": {
+    "description": "Solo validator! Supporting Monad block by block",
+    "logo": "https://avatars.githubusercontent.com/u/226050113",
+    "name": "vldtr.xyz",
+    "website": "bbs.vldtr.xyz",
+    "x": "https://x.com/ShavetheMFwhale"
+  },
+  "6": {
+    "description": "Pro Staking for Pro Stakers on the Monad blockchain",
+    "logo": "https://bafybeigaa3mbr4qe4hgc55e6srfliawtzdebrs3lrieas63dfc4vdyhiii.ipfs.w3s.link/ProStaking-CircleMark-360px.png",
+    "name": "ProStaking",
+    "website": "https://prostaking.com/",
+    "x": "https://x.com/ProStaking_"
+  },
+  "60": {
+    "description": "STAKEME helps web 3.0 projects to test their product, and provide the most efficient development support",
+    "logo": "https://raw.githubusercontent.com/stakeme-team/monad-metadata/master/logo/stakeme-logo.png",
+    "name": "STAKEME",
+    "website": "https://stakeme.pro",
+    "x": "https://x.com/stakeme_pro"
+  },
+  "61": {
+    "description": "We are operating a secure, stable Validator Node for many mainnet chains. We provide infrastructure support - public RPC, LCD endpoints, daily snapshots, operate multiple IBC Relayers, Blockchain Explorers, Youtube tutorials, etc.",
+    "logo": "https://raw.githubusercontent.com/SynergyNodes/SynergyNodes_Logo/refs/heads/main/Synergy_Nodes_Logo.png",
+    "name": "Synergy Nodes",
+    "website": "https://www.synergynodes.com",
+    "x": "https://x.com/SynergyNodes"
+  },
+  "63": {
+    "description": "coinblitz.pro",
+    "logo": "https://avatars.githubusercontent.com/u/136187247",
+    "name": "coinblitz.pro",
+    "website": "https://coinblitz.pro",
+    "x": ""
+  },
+  "64": {
+    "description": "Trusted non-custodial PoS provider your reliable partner in web3",
+    "logo": "https://raw.githubusercontent.com/GO2Pro/nodes/refs/heads/main/_i/_l2.png",
+    "name": "GO2Pro",
+    "website": "https://go2pro.xyz/",
+    "x": "https://x.com/GO2Pro_xyz"
+  },
+  "65": {
+    "description": "OriginStake is a trusted Proof-of-Stake infrastructure provider and validator, ensuring secure staking on Monad. With extensive blockchain experience and uptime commitment, we deliver reliable performance for decentralized ecosystems.",
+    "logo": "https://assets.r2.originstake.com/ogs-media/Logo/PNG/OriginStake_Logo_1.png",
+    "name": "OriginStake",
+    "website": "https://originstake.com",
+    "x": "https://x.com/originstake"
+  },
+  "66": {
+    "description": "Stakely is a leading non-custodial staking provider, providing professional blockchain infrastructure and managing over $1B TVL across 40+ blockchains and protocols. Since 2020, we provide professional investors with secure, simple staking solutions.",
+    "logo": "https://img.stakely.io/logos/stakely.png",
+    "name": "Stakely",
+    "website": "https://stakely.io",
+    "x": "https://x.com/stakely_io"
+  },
+  "67": {
+    "description": "Monad community validator for mainnet.",
+    "logo": "https://raw.githubusercontent.com/ccassini/tesnet-2/main/cassini-logo.png",
+    "name": "Cassini",
+    "website": "https://x.com/Cassini0x",
+    "x": "https://x.com/Cassini0x"
+  },
+  "68": {
+    "description": "https://stakr.space",
+    "logo": "https://raw.githubusercontent.com/cp0x/Eigenlayer-Operator/main/cp0x-logo-stakr.png",
+    "name": "cp0x_by_STAKRspace",
+    "website": "https://cp0x.com/",
+    "x": "https://x.com/cp0xdotcom"
+  },
+  "69": {
+    "description": "Innovative and scalable solutions for blockchain projects.",
+    "logo": "https://raw.githubusercontent.com/Mutu-s/metadata/main/0xhub.png",
+    "name": "0xHub",
+    "website": "https://www.0xhub.xyz/",
+    "x": "https://x.com/0xhubxyz"
+  },
+  "7": {
+    "description": "Validator for Proof of Stake blockchains. Delegate to us for a easy staking experience.",
+    "logo": "https://raw.githubusercontent.com/staking4all/eigenlayer/main/Stake4All_logo.png",
+    "name": "Staking4All",
+    "website": "https://www.staking4all.org/",
+    "x": "https://x.com/staking4all"
+  },
+  "70": {
+    "description": "F5 Nodes operates a high-performance infrastructure that ensures an excessive level of security and reliability for blockchain networks & protocols.",
+    "logo": "https://f5nodes.com/logo.jpg",
+    "name": "F5 Nodes",
+    "website": "https://f5nodes.com",
+    "x": "https://x.com/f5nodes"
+  },
+  "71": {
+    "description": "Independent validator supporting emerging chains from day one.",
+    "logo": "https://www.firstset.xyz/logo.png",
+    "name": "Firstset",
+    "website": "https://firstset.xyz",
+    "x": "https://x.com/firstset_"
+  },
+  "72": {
+    "description": "Enterprise-grade blockchain validation, powered by independent infrastructure and decades of technical mastery.",
+    "logo": "https://raw.githubusercontent.com/01node/brand-kit/refs/heads/main/png/01node-black-avatar-transparent.png",
+    "name": "01node",
+    "website": "https://01node.com",
+    "x": "https://x.com/01node"
+  },
+  "73": {
+    "description": "1XP secures the future of economic autonomy. With top-tier infrastructure and deep governance expertise, we power networks that enable true decentralization. Stake with experience. Stake with 1XP.",
+    "logo": "https://raw.githubusercontent.com/1XP-Inc/brand-kit/refs/heads/main/brandkit/logo/svg/1xp_logo_symbol_transparent.svg",
+    "name": "1XP",
+    "website": "https://1xp.com/",
+    "x": "https://x.com/1XP_Inc"
+  },
+  "74": {
+    "description": "Trust Us Stake Us",
+    "logo": "https://raw.githubusercontent.com/StakeUs/Stakeus_LOGO/refs/heads/main/logo-no-background.png",
+    "name": "StakeUs",
+    "website": "https://stakeus.xyz",
+    "x": "https://x.com/StakeusXyz"
+  },
+  "75": {
+    "description": "Laminated Labs is a boutique software and infrastructure collective built by four friends with deep technical chops and a shared love of laminated dough.",
+    "logo": "https://laminated-labs-assets.s3.us-east-2.amazonaws.com/public/logo.png",
+    "name": "Laminated Labs",
+    "website": "https://laminatedlabs.com/",
+    "x": "https://x.com/LaminatedLabs"
+  },
+  "76": {
+    "description": "Swiss-operated, non-custodial, institutional grade staking provider with $4Bn+ in assets, supporting 50+ PoS networks.",
+    "logo": "https://static.lgns.xyz/logo.jpg",
+    "name": "Luganodes",
+    "website": "https://luganodes.com/",
+    "x": "https://x.com/luganodes"
+  },
+  "77": {
+    "description": "KudasaiJP/Omakase is a professional staking and validation service. We also contribute to innovative projects via marketing and development support.",
+    "logo": "https://raw.githubusercontent.com/0xmakase/monad-validator-info/master/config/logo.png",
+    "name": "Omakase",
+    "website": "https://0xmakase.co.jp/",
+    "x": "https://x.com/0xmakase_jp"
+  },
+  "78": {
+    "description": "Validation Cloud is a Web3 platform that delivers elite, high-performance node and staking infrastructure.",
+    "logo": "https://cdn.prod.website-files.com/653acce1d72443c35298481d/653bbcd87fc49bd75a9b6a3e_Webclip.png",
+    "name": "Validation Cloud",
+    "website": "https://www.validationcloud.io",
+    "x": "https://x.com/validationcloud"
+  },
+  "79": {
+    "description": "Securing & Decentralizing PoS Networks.",
+    "logo": "https://raw.githubusercontent.com/stakecito/resources/34e618b84bb4c0225d216cfd837087167d839c17/logo_stakecito.jpeg",
+    "name": "Stakecito",
+    "website": "https://stakecito.com/",
+    "x": "https://x.com/stakecito"
+  },
+  "8": {
+    "description": "DSRV is an integrated blockchain solutions company with the mission of enriching the crypto ecosystem via stronger connectivity. We strive to be your gateway to a suite of all-comprehensive blockchain services. Everything distributed, served complete.",
+    "logo": "https://s3.amazonaws.com/keybase_processed_uploads/8349f3ab6852a8419c1987ad9096c605_360_360.jpg",
+    "name": "DSRV",
+    "website": "https://dsrv.com",
+    "x": "https://x.com/dsrvlabs"
+  },
+  "80": {
+    "description": "Enterprise Grade Blockchain Operations. Built for Security.",
+    "logo": "https://raw.githubusercontent.com/cryptocrew-validators/CryptoCrew-Validators/refs/heads/main/solva-s_logo-400x400.png",
+    "name": "\u2705 CryptoCrew",
+    "website": "https://solva.solutions",
+    "x": "https://x.com/crypto_crew"
+  },
+  "81": {
+    "description": "Providers of enterprise grade blockchain infrastructure services.",
+    "logo": "https://raw.githubusercontent.com/Silk-Nodes/brand-assests/refs/heads/main/icon/Silk_Nodes180.jpg",
+    "name": "Silk Nodes",
+    "website": "https://monad.silknodes.io/",
+    "x": "https://twitter.com/silk_nodes"
+  },
+  "82": {
+    "description": "Huginn is a trusted infrastructure provider and active validator across multiple chains. We focus on reliability, deep ecosystem research, and long-term alignment with the communities we support.",
+    "logo": "https://huginn.tech/assets/logos/huginn-logo.png",
+    "name": "Huginn",
+    "website": "https://huginn.tech",
+    "x": "https://x.com/HuginnStake"
+  },
+  "83": {
+    "description": "CertHum is the home of Certified Human digital media and premier blockchain infrastructure.",
+    "logo": "https://static.wixstatic.com/media/78af9d_6df3502cf68c40dcb459d15edb76de48~mv2.png/v1/fill/w_138,h_138,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/CertHum%20Logo3.png",
+    "name": "CertHum",
+    "website": "https://www.certhum.com",
+    "x": "https://x.com/CertHum"
+  },
+  "84": {
+    "description": "We operate nodes and infra for next-generation blockchain",
+    "logo": "https://mcf.rocks/images/assets/mcf-text-blue.png",
+    "name": "MCF",
+    "website": "https://mcf.rocks/",
+    "x": "https://x.com/MCFvalidator "
+  },
+  "85": {
+    "description": "Non-custodial staking provider",
+    "logo": "https://stakeangle.com/StakeAngle_logo.png",
+    "name": "StakeAngle",
+    "website": "https://stakeangle.com/",
+    "x": "https://x.com/Muster365"
+  },
+  "86": {
+    "description": "Vietnam's largest community validator, offering validation services, educational resources, and market penetration in the Vietnamese crypto market.",
+    "logo": "https://insights.tienthuattoan.com/assets/logo/TTT-1024.png",
+    "name": "TTT VN",
+    "website": "https://tienthuattoan.com",
+    "x": "https://x.com/ttt_lab"
+  },
+  "87": {
+    "description": "Syncnode Professional Staking Services - Infrastructure for the next generation of trust",
+    "logo": "https://raw.githubusercontent.com/syncnode-srl/syncnode/refs/heads/master/logo2.jpeg",
+    "name": "Syncnode",
+    "website": "https://syncnode.tech/",
+    "x": "https://x.com/syncn0de"
+  },
+  "88": {
+    "description": "Deliver the reliable and high performance infrastructure for the decentralised web and staking services",
+    "logo": "https://grassets.tech/src/images/logo-g-icon.svg",
+    "name": "Grassets",
+    "website": "https://grassets.tech",
+    "x": "https://x.com/grassetst"
+  },
+  "89": {
+    "description": "Blockchain infrastructure at institutional standards. Multi-region reliability, enterprise SLAs, and slash protection insurance. We build trust into every block.",
+    "logo": "https://snapshots.rhinostake.com/rhinoshare/RhinoLogoFilled.Dark.png",
+    "name": "RHINO \ud83e\udd8f",
+    "website": "https://rhinostake.com",
+    "x": "https://x.com/rhinostake"
+  },
+  "9": {
+    "description": "Everstake is the \u21161 staking infrastructure platform, trusted by retail and institutional clients worldwide. Committed to the highest standards of compliance, we deliver secure staking solutions across 85+ chains with a reliability rate of 99.98%",
+    "logo": "https://everstake.one/logo.png",
+    "name": "Everstake",
+    "website": "https://everstake.one/",
+    "x": "https://twitter.com/everstake_pool"
+  },
+  "90": {
+    "description": "Stake with confidence",
+    "logo": "https://github.com/Brightlystake/Brightlystake_Official/blob/main/Brightlystake.png?raw=true",
+    "name": "Brightlystake",
+    "website": "https://brightlystake.com",
+    "x": "https://x.com/brightlystake"
+  },
+  "91": {
+    "description": "Backed by five years of experience, Encapsulate secures 40+ networks with nearly half a billion dollars in delegated stake, delivering industry-leading uptime, rigorous security, and community-driven open-source tools.",
+    "logo": "https://raw.githubusercontent.com/encapsulate-xyz/assets/refs/heads/main/encapsulate.png",
+    "name": "Encapsulate",
+    "website": "https://encapsulate.xyz/",
+    "x": "https://x.com/encapsulate_xyz"
+  },
+  "92": {
+    "description": "CMS Holdings is a principal investment firm focusing on digital assets and blockchain technology",
+    "logo": "https://raw.githubusercontent.com/DaveWK/general_repo/refs/heads/main/cms-logo-only.png",
+    "name": "CMS Holdings",
+    "website": "http://cmsholdings.io/",
+    "x": "https://x.com/cmsholdings"
+  },
+  "93": {
+    "description": "\ud83d\ude80 Accelerating Web3 with lightning-fast Monad infrastructure \u26a1\ufe0f \ud83d\udd10 SOC 1 Type 2, SOC 2 Type 2, ISO 27001 Certified.",
+    "logo": "https://www.quicknode.com/staked-validator-logo.png",
+    "name": "Quicknode",
+    "website": "https://quicknode.com",
+    "x": "https://x.com/quicknode"
+  },
+  "94": {
+    "description": "Stake with confidence. TrustedPoint brings top-tier reliability, decentralization, and security to PoS blockchains.",
+    "logo": "https://trusted-point.s3.amazonaws.com/logo/TrustedPointGoldAndRedWithBackground.png",
+    "name": "TrustedPoint",
+    "website": "https://trusted-point.com",
+    "x": "https://x.com/Trusted_Point"
+  },
+  "95": {
+    "description": "Secure and reliable validator.",
+    "logo": "https://chainlayer.io/icons/icon-512x512.png",
+    "name": "Chainlayer",
+    "website": "https://chainlayer.io/",
+    "x": "https://x.com/chainlayerio"
+  },
+  "96": {
+    "description": "Empowering Decentralization, Ensuring Security",
+    "logo": "https://files.nodeshub.online/brand/n-color.png",
+    "name": "NodesHub",
+    "website": "https://NodesHub.online",
+    "x": "https://x.com/Nodes_Hub"
+  },
+  "97": {
+    "description": "0% Commission",
+    "logo": "https://i.ibb.co/ynk9vQLD/backpack.png",
+    "name": "Backpack",
+    "website": "https://backpack.exchange/",
+    "x": "https://x.com/Backpack"
+  },
+  "98": {
+    "description": "Validator from one Nad for all Nads",
+    "logo": "https://raw.githubusercontent.com/Averonix/a0x/refs/heads/main/wJC1SSNQ_400x400.jpg",
+    "name": "auri0x",
+    "website": "https://auri0x.io",
+    "x": "https://x.com/Auri_0x"
+  },
+  "99": {
+    "description": "Independent organization of validators, builders, network contributors and community builders.",
+    "logo": "https://www.qubelabs.io/images/qubelabs-logo.png",
+    "name": "Qubelabs",
+    "website": "https://www.qubelabs.io",
+    "x": "https://x.com/qubelabs"
+  }
+}

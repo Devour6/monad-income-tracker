@@ -1,279 +1,113 @@
 /**
- * Validator ID → name + commission mapping.
+ * Validator ID → name + metadata mapping.
  *
- * This mapping needs to be populated by running the /api/admin/map-validators
- * endpoint, which cross-references on-chain validator data (auth address, stake)
- * with our known validator list.
- *
- * Until populated, the income tracker still works — it just shows validator IDs
- * instead of human-readable names.
+ * Primary source: monad-developers/validator-info GitHub repo (official registry).
+ * The registry JSON is embedded at build time and refreshed from GitHub at runtime.
  */
+import registryData from "./validator-registry.json";
+
 export interface ValidatorInfo {
   name: string;
-  commission: number; // percentage 0-100
+  commission: number; // percentage 0-100 (from on-chain, not registry)
+  logo?: string;
+  website?: string;
+  x?: string;
+  description?: string;
 }
 
-export const VALIDATOR_NAMES: Record<number, ValidatorInfo> = {
-  3: { name: "Backpack", commission: 0 }, // 280M MON — grew from 898M known, closest large validator
-  7: { name: "Kairos Research", commission: 20 },
-  8: { name: "Node.Monster", commission: 20 },
-  10: { name: "Staking4All", commission: 10 },
-  13: { name: "Stakely", commission: 20 },
-  14: { name: "Silk Nodes", commission: 20 },
-  15: { name: "CertHum", commission: 20 },
-  17: { name: "Laminated Labs", commission: 20 },
-  19: { name: "PathrockNetwork", commission: 20 },
-  20: { name: "QuantNode", commission: 20 },
-  21: { name: "0xHub", commission: 20 },
-  28: { name: "DeSpread", commission: 20 },
-  29: { name: "d10s", commission: 20 },
-  30: { name: "TTT VN", commission: 20 },
-  35: { name: "Coinage x DAIC", commission: 20 },
-  36: { name: "Gemini", commission: 20 },
-  37: { name: "GalaxyDigital", commission: 5 },
-  38: { name: "Moonlet", commission: 20 },
-  39: { name: "1XP", commission: 20 },
-  42: { name: "Quicknode", commission: 10 },
-  43: { name: "P-OPS Team", commission: 20 },
-  44: { name: "StarlightNode", commission: 20 },
-  45: { name: "StakeCraft", commission: 5 },
-  48: { name: "Goldsky", commission: 0 },
-  51: { name: "RockX", commission: 20 },
-  52: { name: "Asymmetric Research", commission: 20 },
-  53: { name: "xLabs", commission: 10 },
-  54: { name: "Cryptomind", commission: 20 },
-  56: { name: "Zellic", commission: 10 },
-  58: { name: "Provalidator", commission: 20 },
-  61: { name: "StakeSquid", commission: 10 },
-  63: { name: "coinblitz.pro", commission: 20 },
-  65: { name: "FP Validated", commission: 20 },
-  66: { name: "amonstaker", commission: 20 },
-  68: { name: "cp0x", commission: 20 },
-  69: { name: "Stakecito", commission: 20 },
-  71: { name: "The Workshop", commission: 20 },
-  75: { name: "Luganodes", commission: 20 },
-  76: { name: "Figment", commission: 20 },
-  78: { name: "Blockdaemon", commission: 10 },
-  82: { name: "lux8net", commission: 20 },
-  86: { name: "RHINO", commission: 20 },
-  87: { name: "Node3Tech", commission: 20 },
-  88: { name: "Parsec X Firstset", commission: 20 },
-  92: { name: "gmonads.com", commission: 20 },
-  97: { name: "Unknown (ID 97)", commission: 20 }, // 1.53B MON — largest validator, unidentified
-  98: { name: "Flipside Crypto", commission: 20 },
-  99: { name: "auri0x", commission: 20 },
-  101: { name: "Validatus", commission: 10 },
-  105: { name: "DSRV", commission: 20 },
-  109: { name: "zim.one", commission: 9 },
-  110: { name: "Stake Shark", commission: 20 },
-  111: { name: "Syncnode", commission: 20 },
-  112: { name: "Synergy Nodes", commission: 20 },
-  114: { name: "Triton one", commission: 10 },
-  117: { name: "Staker Space", commission: 20 },
-  123: { name: "LeMonad", commission: 3 },
-  125: { name: "L0vd", commission: 20 },
-  128: { name: "Laine by SOL Strategies", commission: 20 },
-  129: { name: "Spectrum Staking", commission: 20 },
-  133: { name: "InfStones", commission: 20 },
-  138: { name: "StakingCabin", commission: 20 },
-  139: { name: "LakeStake", commission: 20 },
-  141: { name: "Artifact", commission: 20 },
-  143: { name: "Qubelabs", commission: 20 },
-  148: { name: "Simply Staking", commission: 10 },
-  150: { name: "kjnodes", commission: 20 },
-  151: { name: "Finoa", commission: 20 },
-  153: { name: "SenseiNode", commission: 20 },
-  158: { name: "NodeStake", commission: 20 },
-  160: { name: "Redundex", commission: 20 },
-  162: { name: "Proof Group", commission: 20 },
-  166: { name: "Spider Node", commission: 20 },
-  167: { name: "Natsai", commission: 20 },
-  168: { name: "Staking Facilities", commission: 20 },
-  169: { name: "Stardust Staking", commission: 19 },
-  172: { name: "Allnodes", commission: 10 },
-  179: { name: "CMS Holdings", commission: 4 },
-  186: { name: "Cosmostation", commission: 10 },
-  187: { name: "forthenads", commission: 20 },
-  190: { name: "Enigma", commission: 20 },
-  191: { name: "Huginn", commission: 20 },
-  193: { name: "EmberStake", commission: 20 },
-  206: { name: "Chainode Tech", commission: 20 },
-  211: { name: "Informal Systems", commission: 20 },
-  214: { name: "ASXN", commission: 20 },
-};
+interface RegistryEntry {
+  name: string;
+  logo?: string;
+  website?: string;
+  x?: string;
+  description?: string;
+}
+
+// Build the VALIDATOR_NAMES map from the embedded registry JSON
+const registry = registryData as Record<string, RegistryEntry>;
+
+export const VALIDATOR_NAMES: Record<number, ValidatorInfo> = {};
+for (const [id, entry] of Object.entries(registry)) {
+  VALIDATOR_NAMES[Number(id)] = {
+    name: entry.name,
+    commission: 0, // Commission comes from on-chain data, not registry
+    logo: entry.logo,
+    website: entry.website,
+    x: entry.x,
+    description: entry.description,
+  };
+}
 
 /**
- * Known validators with their stake data for matching.
- * Used by the mapping endpoint to match on-chain IDs to names.
+ * Fetch the latest validator registry from GitHub.
+ * Returns a map of validator ID → name.
+ * Falls back to the embedded registry on failure.
  */
-export const KNOWN_VALIDATORS = [
-  {name:"Backpack",totalStake:897966029.56,commission:0.0},
-  {name:"gmonads.com",totalStake:307223867.25,commission:20.0},
-  {name:"CMS Holdings",totalStake:230520346.1,commission:4.0},
-  {name:"LeMonad",totalStake:214186199.42,commission:3.0},
-  {name:"Nansen",totalStake:204840495.03,commission:20.0},
-  {name:"P2P.org",totalStake:202839662.07,commission:20.0},
-  {name:"Everstake",totalStake:181021917.63,commission:10.0},
-  {name:"MonadVision",totalStake:179023277.87,commission:20.0},
-  {name:"ProStaking",totalStake:178881634.33,commission:20.0},
-  {name:"Alchemy",totalStake:168279997.67,commission:10.0},
-  {name:"polkachu.com",totalStake:162023979.69,commission:0.0},
-  {name:"Chorus One",totalStake:137733158.82,commission:20.0},
-  {name:"B-Harvest",totalStake:131465421.53,commission:20.0},
-  {name:"Pier Two",totalStake:125530367.75,commission:10.0},
-  {name:"Stardust Staking",totalStake:110083688.42,commission:19.0},
-  {name:"Stakin",totalStake:106600451.54,commission:10.0},
-  {name:"Gemini",totalStake:106512089.45,commission:20.0},
-  {name:"Staking4All",totalStake:96802664.34,commission:10.0},
-  {name:"Kairos Research",totalStake:96278164.86,commission:20.0},
-  {name:"Validation Cloud",totalStake:94607340.01,commission:20.0},
-  {name:"01node",totalStake:94530740.28,commission:20.0},
-  {name:"nadradar",totalStake:93260171.03,commission:20.0},
-  {name:"Laine by SOL Strategies",totalStake:91804360.9,commission:20.0},
-  {name:"P-OPS Team",totalStake:91679828.45,commission:20.0},
-  {name:"forthenads",totalStake:90307585.15,commission:20.0},
-  {name:"Cosmostation",totalStake:89713293.62,commission:10.0},
-  {name:"Allnodes",totalStake:87646463.79,commission:10.0},
-  {name:"Blockdaemon",totalStake:86160426.0,commission:10.0},
-  {name:"Triton one",totalStake:83890482.37,commission:10.0},
-  {name:"L0vd",totalStake:82531446.35,commission:20.0},
-  {name:"Laminated Labs",totalStake:81131257.95,commission:20.0},
-  {name:"Figment",totalStake:80975002.45,commission:20.0},
-  {name:"Zellic",totalStake:79670412.26,commission:10.0},
-  {name:"Luganodes",totalStake:79059334.07,commission:20.0},
-  {name:"Spectrum Staking",totalStake:78935264.92,commission:20.0},
-  {name:"Staking Facilities",totalStake:78116122.98,commission:20.0},
-  {name:"InfStones",totalStake:78115500.14,commission:20.0},
-  {name:"H2O Nodes",totalStake:78111582.19,commission:20.0},
-  {name:"Twinstake",totalStake:77998639.61,commission:20.0},
-  {name:"rskl",totalStake:77703861.02,commission:20.0},
-  {name:"stakefish",totalStake:77411736.18,commission:20.0},
-  {name:"ContributionDAO",totalStake:76610631.93,commission:20.0},
-  {name:"TrustedPoint",totalStake:75574179.42,commission:20.0},
-  {name:"Lemniscap",totalStake:75402141.56,commission:20.0},
-  {name:"HashKey Cloud",totalStake:75250235.09,commission:10.0},
-  {name:"HoodRun",totalStake:75243485.14,commission:20.0},
-  {name:"Cogent by SOL Strategies",totalStake:75239661.16,commission:20.0},
-  {name:"RockX",totalStake:75159147.4,commission:20.0},
-  {name:"1XP",totalStake:75158572.14,commission:20.0},
-  {name:"ASXN",totalStake:75156691.22,commission:20.0},
-  {name:"StakingCabin",totalStake:75138501.8,commission:20.0},
-  {name:"Informal Systems",totalStake:75123665.43,commission:20.0},
-  {name:"Flipside Crypto",totalStake:75111965.1,commission:20.0},
-  {name:"Asymmetric Research",totalStake:75108138.79,commission:20.0},
-  {name:"Moonlet",totalStake:75102868.04,commission:20.0},
-  {name:"Artifact",totalStake:75100873.4,commission:20.0},
-  {name:"Chainode Tech",totalStake:75100050.2,commission:20.0},
-  {name:"QuantNode",totalStake:75100014.43,commission:20.0},
-  {name:"Qubelabs",totalStake:75100008.25,commission:20.0},
-  {name:"Cryptomind",totalStake:75100004.26,commission:20.0},
-  {name:"auri0x",totalStake:75100002.58,commission:20.0},
-  {name:"The Workshop",totalStake:72361950.83,commission:20.0},
-  {name:"DELIGHT",totalStake:68011679.54,commission:0.0},
-  {name:"Provalidator",totalStake:67462449.24,commission:20.0},
-  {name:"Imperator.co",totalStake:67015078.65,commission:20.0},
-  {name:"Proof Group",totalStake:67010517.01,commission:20.0},
-  {name:"Grassets",totalStake:66336898.67,commission:20.0},
-  {name:"Parsec X Firstset",totalStake:66046584.99,commission:20.0},
-  {name:"Stake Shark",totalStake:63636557.97,commission:20.0},
-  {name:"StakeCraft",totalStake:60031030.76,commission:5.0},
-  {name:"Synergy Nodes",totalStake:58755615.28,commission:20.0},
-  {name:"DSRV",totalStake:58504449.02,commission:20.0},
-  {name:"StakeSquid",totalStake:58428186.62,commission:10.0},
-  {name:"Nodes.Guru",totalStake:57902347.2,commission:20.0},
-  {name:"blockscape",totalStake:57815912.29,commission:5.0},
-  {name:"Simply Staking",totalStake:57658869.6,commission:10.0},
-  {name:"NodeStake",totalStake:57037025.06,commission:20.0},
-  {name:"Finoa",totalStake:57027391.36,commission:20.0},
-  {name:"zim.one",totalStake:56915171.26,commission:9.0},
-  {name:"Node.Monster",totalStake:55764761.0,commission:20.0},
-  {name:"Spider Node",totalStake:55738653.97,commission:20.0},
-  {name:"Goldsky",totalStake:55108256.94,commission:0.0},
-  {name:"LakeStake",totalStake:55029400.1,commission:20.0},
-  {name:"Huginn",totalStake:54560433.45,commission:20.0},
-  {name:"DeSpread",totalStake:54257986.29,commission:20.0},
-  {name:"d10s",totalStake:54141137.62,commission:20.0},
-  {name:"xLabs",totalStake:53686659.04,commission:10.0},
-  {name:"GalaxyDigital",totalStake:53351733.46,commission:5.0},
-  {name:"lux8net",totalStake:53269142.91,commission:20.0},
-  {name:"Coinage x DAIC",totalStake:53209461.76,commission:20.0},
-  {name:"Redundex",totalStake:53006480.47,commission:20.0},
-  {name:"Syncnode",totalStake:53000000.0,commission:20.0},
-  {name:"Natsai",totalStake:52998155.96,commission:20.0},
-  {name:"TTT VN",totalStake:52991792.6,commission:20.0},
-  {name:"Node3Tech",totalStake:52988289.23,commission:20.0},
-  {name:"Stakely",totalStake:52985976.14,commission:20.0},
-  {name:"coinblitz.pro",totalStake:52975842.17,commission:20.0},
-  {name:"PathrockNetwork",totalStake:52926589.78,commission:20.0},
-  {name:"0xHub",totalStake:52924979.75,commission:20.0},
-  {name:"Staker Space",totalStake:52906835.21,commission:20.0},
-  {name:"Quicknode",totalStake:52902560.82,commission:10.0},
-  {name:"kjnodes",totalStake:52876023.15,commission:20.0},
-  {name:"CertHum",totalStake:52848825.71,commission:20.0},
-  {name:"cp0x",totalStake:52824933.81,commission:20.0},
-  {name:"amonstaker",totalStake:52818769.52,commission:20.0},
-  {name:"SenseiNode",totalStake:52800345.58,commission:20.0},
-  {name:"Silk Nodes",totalStake:52794181.67,commission:20.0},
-  {name:"Stakecito",totalStake:52749940.8,commission:20.0},
-  {name:"RHINO",totalStake:52736875.03,commission:20.0},
-  {name:"StarlightNode",totalStake:52710585.61,commission:20.0},
-  {name:"Enigma",totalStake:52702554.33,commission:20.0},
-  {name:"EmberStake",totalStake:52680003.46,commission:20.0},
-  {name:"Talentum Labs",totalStake:52678654.78,commission:20.0},
-  {name:"Validatus",totalStake:52655646.39,commission:10.0},
-  {name:"Pharus",totalStake:52645494.74,commission:20.0},
-  {name:"r93AX Nodes",totalStake:52628966.49,commission:20.0},
-  {name:"ITRocket",totalStake:52628174.28,commission:20.0},
-  {name:"Cassini",totalStake:52625740.85,commission:20.0},
-  {name:"FP Validated",totalStake:52620001.51,commission:20.0},
-  {name:"deNodes",totalStake:52615003.0,commission:20.0},
-  {name:"node101",totalStake:52614269.51,commission:20.0},
-  {name:"Swissstarnode",totalStake:52611845.2,commission:20.0},
-  {name:"Tessellated",totalStake:52610738.79,commission:10.0},
-  {name:"Lavender.Five Nodes",totalStake:52609817.03,commission:20.0},
-  {name:"Chainflow",totalStake:52607691.38,commission:5.0},
-  {name:"Forest Staking",totalStake:52606046.96,commission:20.0},
-  {name:"StakeUs",totalStake:52605906.41,commission:20.0},
-  {name:"CosmosSpaces",totalStake:52605087.5,commission:20.0},
-  {name:"BlackBlocks",totalStake:52603275.2,commission:20.0},
-  {name:"NodesHub",totalStake:52603174.9,commission:20.0},
-  {name:"[NODERS]",totalStake:52602997.69,commission:20.0},
-  {name:"Brightlystake",totalStake:52602740.15,commission:20.0},
-  {name:"CroutonDigital",totalStake:52602536.23,commission:20.0},
-  {name:"Unit 410",totalStake:52602520.35,commission:20.0},
-  {name:"Republic",totalStake:52602510.43,commission:20.0},
-  {name:"GO2Pro",totalStake:52602391.51,commission:20.0},
-  {name:"STAKEME",totalStake:52601774.57,commission:20.0},
-  {name:"OriginStake",totalStake:52601645.06,commission:20.0},
-  {name:"CoinSummer Labs",totalStake:52600390.98,commission:20.0},
-  {name:"Validatrium",totalStake:52600112.66,commission:20.0},
-  {name:"Encapsulate",totalStake:52600083.71,commission:8.0},
-  {name:"F5 Nodes",totalStake:52600050.0,commission:20.0},
-  {name:"GulfLabs",totalStake:52600030.18,commission:20.0},
-  {name:"FTP",totalStake:52600001.0,commission:20.0},
-  {name:"DTEAM",totalStake:52600000.0,commission:20.0},
-  {name:"MCF",totalStake:52600000.0,commission:20.0},
-  {name:"StakeAngle",totalStake:52600000.0,commission:20.0},
-  {name:"Needlecast",totalStake:52600000.0,commission:20.0},
-  {name:"Pacific Meta",totalStake:52600000.0,commission:20.0},
-  {name:"Ledger by P2P.org",totalStake:29519361.7,commission:10.0},
-  {name:"Chainlayer",totalStake:28450319.72,commission:10.0},
-  {name:"Water Cooler Studios",totalStake:16774782.77,commission:0.0},
-  {name:"Omakase",totalStake:16313873.27,commission:20.0},
-  {name:"CryptoCrew",totalStake:15434810.25,commission:5.0},
-  {name:"Meria",totalStake:15303744.66,commission:20.0},
-  {name:"Fountainhead",totalStake:15223043.63,commission:20.0},
-  {name:"Stakeware",totalStake:15204136.93,commission:20.0},
-  {name:"Animoca Brands",totalStake:15164885.19,commission:20.0},
-  {name:"Kraken",totalStake:15157487.39,commission:20.0},
-  {name:"Ghost",totalStake:15144644.0,commission:20.0},
-  {name:"BlockHunters",totalStake:15137794.86,commission:20.0},
-  {name:"ValiDAO",totalStake:15131093.16,commission:10.0},
-  {name:"Staketab",totalStake:15125696.53,commission:10.0},
-  {name:"BitGo",totalStake:15122562.83,commission:20.0},
-  {name:"BlockPI",totalStake:15120474.65,commission:20.0},
-  {name:"Kukis Global",totalStake:15104966.72,commission:20.0},
-  {name:"Hex Trust",totalStake:15100090.0,commission:20.0},
-  {name:"Ankr",totalStake:15100000.0,commission:20.0},
-  {name:"DIN",totalStake:15100000.0,commission:20.0},
-];
+export async function fetchFreshRegistry(): Promise<
+  Record<number, ValidatorInfo>
+> {
+  try {
+    const res = await fetch(
+      "https://api.github.com/repos/monad-developers/validator-info/contents/mainnet",
+      {
+        headers: { Accept: "application/vnd.github.v3+json" },
+        next: { revalidate: 3600 }, // Cache for 1 hour
+      }
+    );
+
+    if (!res.ok) {
+      console.warn(
+        `[registry] GitHub API returned ${res.status}, using embedded registry`
+      );
+      return VALIDATOR_NAMES;
+    }
+
+    const files: Array<{ download_url: string }> = await res.json();
+    const freshMap: Record<number, ValidatorInfo> = {};
+
+    // Fetch each file in parallel with concurrency limit
+    const CONCURRENCY = 20;
+    for (let i = 0; i < files.length; i += CONCURRENCY) {
+      const batch = files.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch
+          .filter((f) => f.download_url?.endsWith(".json"))
+          .map(async (f) => {
+            const r = await fetch(f.download_url, {
+              signal: AbortSignal.timeout(5000),
+            });
+            return r.json();
+          })
+      );
+
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value?.id != null) {
+          const v = r.value;
+          freshMap[v.id] = {
+            name: v.name || `Validator #${v.id}`,
+            commission: 0,
+            logo: v.logo,
+            website: v.website,
+            x: v.x,
+            description: v.description,
+          };
+        }
+      }
+    }
+
+    if (Object.keys(freshMap).length > 100) {
+      console.log(
+        `[registry] Fetched ${Object.keys(freshMap).length} validators from GitHub`
+      );
+      return freshMap;
+    }
+
+    console.warn(
+      `[registry] Only got ${Object.keys(freshMap).length} validators, using embedded`
+    );
+    return VALIDATOR_NAMES;
+  } catch (error) {
+    console.warn("[registry] Failed to fetch from GitHub:", error);
+    return VALIDATOR_NAMES;
+  }
+}
