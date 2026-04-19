@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { epochSnapshots, networkEpochs } from "@/lib/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
+import { calculateEpochReward } from "@/lib/monad-rpc";
 
 /**
  * GET /api/validators/[id]/income?epochs=30
  *
  * Returns per-epoch income history for a validator.
- * Each entry includes block rewards, commission income, and MON price.
+ * Recomputes income from accumulator deltas between consecutive snapshots,
+ * so it works correctly even if the cron's pre-computed values are null
+ * (e.g. first snapshot, or gaps in epoch numbering).
  */
 export async function GET(
   request: Request,
@@ -58,7 +61,7 @@ export async function GET(
       priceMap.set(n.epoch, Number(n.monPriceUsd) || 0);
     }
 
-    // Compute income for each epoch (need delta from previous)
+    // Compute income from accumulator deltas between consecutive snapshots
     const incomeHistory = [];
     let totalBlockRewards = 0;
     let totalCommission = 0;
@@ -70,22 +73,31 @@ export async function GET(
       const prev = chronological[i - 1];
       const curr = chronological[i];
 
-      const blockRewards = Number(curr.blockRewardsMon) || 0;
-      const commissionIncome = Number(curr.commissionMon) || 0;
+      // Recompute from accumulator delta — don't rely on pre-computed DB values
+      const prevAcc = BigInt(prev.accRewardPerToken);
+      const currAcc = BigInt(curr.accRewardPerToken);
+      // Use previous epoch's stake (that's the stake that earned the rewards)
+      const prevStakeWei = BigInt(prev.stakeWei);
+      const { totalRewardMon } = calculateEpochReward(prevAcc, currAcc, prevStakeWei);
+
+      // Commission is stored as 18-decimal fixed-point
+      const commissionRate = Number(BigInt(curr.commission)) / 1e18;
+      const commissionIncome = totalRewardMon * commissionRate;
+
       const stakeWei = BigInt(curr.stakeWei);
       const WEI = BigInt(10) ** BigInt(18);
       const stakeMon = Number(stakeWei / WEI) + Number(stakeWei % WEI) / Number(WEI);
       const monPrice = priceMap.get(curr.epoch) || 0;
 
-      totalBlockRewards += blockRewards;
+      totalBlockRewards += totalRewardMon;
       totalCommission += commissionIncome;
 
       incomeHistory.push({
         epoch: curr.epoch,
-        blockRewardsMon: blockRewards,
+        blockRewardsMon: totalRewardMon,
         commissionMon: commissionIncome,
-        totalMon: blockRewards, // block rewards ARE the total (commission is a subset)
-        totalUsd: blockRewards * monPrice,
+        totalMon: totalRewardMon, // block rewards ARE the total (commission is a subset)
+        totalUsd: totalRewardMon * monPrice,
         stakeMon,
         monPriceUsd: monPrice,
         timestamp: curr.createdAt.toISOString(),

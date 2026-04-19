@@ -8,7 +8,7 @@ import {
   getMonPrice,
   calculateEpochReward,
 } from "@/lib/monad-rpc";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, desc } from "drizzle-orm";
 import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
 
 /**
@@ -78,16 +78,28 @@ export async function GET(request: Request) {
       fetchFreshRegistry().catch(() => VALIDATOR_NAMES),
     ]);
 
-    // 6. Get previous epoch snapshots for delta computation
-    const prevEpoch = epoch - 1;
-    const prevSnapshots = await db
-      .select()
+    // 6. Get the most recent previous epoch's snapshots for delta computation
+    // (epochs may not be consecutive if the cron skips some)
+    const prevEpochRow = await db
+      .select({ epoch: epochSnapshots.epoch })
       .from(epochSnapshots)
-      .where(eq(epochSnapshots.epoch, prevEpoch));
+      .where(sql`${epochSnapshots.epoch} < ${epoch}`)
+      .orderBy(desc(epochSnapshots.epoch))
+      .limit(1);
 
-    const prevMap = new Map(
-      prevSnapshots.map((s) => [s.validatorId, s])
-    );
+    let prevMap = new Map<number, typeof epochSnapshots.$inferSelect>();
+    if (prevEpochRow.length > 0) {
+      const prevSnapshots = await db
+        .select()
+        .from(epochSnapshots)
+        .where(eq(epochSnapshots.epoch, prevEpochRow[0].epoch));
+      prevMap = new Map(
+        prevSnapshots.map((s) => [s.validatorId, s])
+      );
+      console.log(`[snapshot] Using epoch ${prevEpochRow[0].epoch} as previous (current: ${epoch})`);
+    } else {
+      console.log(`[snapshot] No previous epoch found — first snapshot, skipping delta computation`);
+    }
 
     // 7. Insert epoch snapshots with income computation
     let totalNetworkStake = 0;
