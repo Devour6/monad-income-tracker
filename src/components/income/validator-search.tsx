@@ -97,7 +97,7 @@ export function ValidatorSearch({
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-dark border border-cream-8 rounded-xl overflow-hidden shadow-2xl z-50">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-[#0f0e0c] border border-cream-12 rounded-xl overflow-hidden shadow-[0_16px_48px_rgba(0,0,0,0.6)] z-50">
           {/* Search input */}
           <div className="p-3 border-b border-cream-8">
             <div className="flex items-center gap-2 bg-cream-5 rounded-lg px-3 py-2">

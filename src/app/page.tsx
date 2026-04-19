@@ -156,14 +156,16 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* Validator Search */}
-            <ScrollReveal delay={0}>
-              <ValidatorSearch
-                validators={validators}
-                selected={selectedValidator}
-                onSelect={(v: ValidatorListItem) => setSelectedValidator(v)}
-              />
-            </ScrollReveal>
+            {/* Validator Search — z-20 so dropdown renders above ScrollReveal siblings that create stacking contexts via transform */}
+            <div className="relative z-20">
+              <ScrollReveal delay={0}>
+                <ValidatorSearch
+                  validators={validators}
+                  selected={selectedValidator}
+                  onSelect={(v: ValidatorListItem) => setSelectedValidator(v)}
+                />
+              </ScrollReveal>
+            </div>
 
             {selectedValidator && (
               <>
