@@ -14,7 +14,7 @@ export async function GET() {
       .from(validators)
       .orderBy(desc(validators.stakeMon));
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       validators: rows.map((v) => ({
         validatorId: v.validatorId,
         name: v.name || `Validator #${v.validatorId}`,
@@ -25,6 +25,8 @@ export async function GET() {
       })),
       count: rows.length,
     });
+    response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+    return response;
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },

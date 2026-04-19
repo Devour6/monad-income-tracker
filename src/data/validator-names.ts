@@ -45,37 +45,47 @@ export async function fetchFreshRegistry(): Promise<
   Record<number, ValidatorInfo>
 > {
   try {
-    const res = await fetch(
-      "https://api.github.com/repos/monad-developers/validator-info/contents/mainnet",
+    // Use GitHub Trees API — single request gets all file metadata
+    const treeRes = await fetch(
+      "https://api.github.com/repos/monad-developers/validator-info/git/trees/main?recursive=1",
       {
         headers: { Accept: "application/vnd.github.v3+json" },
-        next: { revalidate: 3600 }, // Cache for 1 hour
+        next: { revalidate: 3600 },
+        signal: AbortSignal.timeout(10000),
       }
     );
 
-    if (!res.ok) {
+    if (!treeRes.ok) {
       console.warn(
-        `[registry] GitHub API returned ${res.status}, using embedded registry`
+        `[registry] GitHub Trees API returned ${treeRes.status}, using embedded registry`
       );
       return VALIDATOR_NAMES;
     }
 
-    const files: Array<{ download_url: string }> = await res.json();
+    const tree = await treeRes.json();
+    const jsonFiles = (tree.tree as Array<{ path: string; url: string }>).filter(
+      (f) => f.path.startsWith("mainnet/") && f.path.endsWith(".json")
+    );
+
     const freshMap: Record<number, ValidatorInfo> = {};
 
-    // Fetch each file in parallel with concurrency limit
-    const CONCURRENCY = 20;
-    for (let i = 0; i < files.length; i += CONCURRENCY) {
-      const batch = files.slice(i, i + CONCURRENCY);
+    // Fetch blobs in batches of 10 with delays to respect rate limits
+    const CONCURRENCY = 10;
+    for (let i = 0; i < jsonFiles.length; i += CONCURRENCY) {
+      const batch = jsonFiles.slice(i, i + CONCURRENCY);
       const results = await Promise.allSettled(
-        batch
-          .filter((f) => f.download_url?.endsWith(".json"))
-          .map(async (f) => {
-            const r = await fetch(f.download_url, {
-              signal: AbortSignal.timeout(5000),
-            });
-            return r.json();
-          })
+        batch.map(async (f) => {
+          const r = await fetch(f.url, {
+            headers: { Accept: "application/vnd.github.v3+json" },
+            signal: AbortSignal.timeout(5000),
+          });
+          const blob = await r.json();
+          // GitHub blob API returns base64-encoded content
+          const content = JSON.parse(
+            Buffer.from(blob.content, "base64").toString("utf-8")
+          );
+          return content;
+        })
       );
 
       for (const r of results) {
@@ -89,6 +99,11 @@ export async function fetchFreshRegistry(): Promise<
             description: v.description,
           };
         }
+      }
+
+      // Pause between batches to respect GitHub rate limits
+      if (i + CONCURRENCY < jsonFiles.length) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
     }
 

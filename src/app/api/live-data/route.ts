@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import {
-  getAllValidatorIds,
-  getValidators,
-  getMonPrice,
-} from "@/lib/monad-rpc";
+import { db } from "@/lib/db";
+import { networkEpochs, validators as validatorsTable } from "@/lib/db/schema";
+import { desc, sql } from "drizzle-orm";
+import { getMonPrice } from "@/lib/monad-rpc";
 import {
   DEFAULT_MON_PRICE,
   DEFAULT_TOTAL_STAKED,
@@ -21,21 +20,30 @@ export async function GET() {
   };
 
   try {
-    // Fetch MON price and validator data in parallel
-    const [monPrice, validatorIds] = await Promise.all([
+    // Read from DB (populated by cron) instead of making 200+ RPC calls
+    const [latestEpoch, stakeAgg, monPrice] = await Promise.all([
+      db
+        .select()
+        .from(networkEpochs)
+        .orderBy(desc(networkEpochs.epoch))
+        .limit(1),
+      db
+        .select({
+          totalStake: sql<string>`coalesce(sum(${validatorsTable.stakeMon}), '0')`,
+          count: sql<number>`count(*)`,
+        })
+        .from(validatorsTable),
       getMonPrice(),
-      getAllValidatorIds(false), // active validators only for live data
     ]);
 
-    // Fetch all validator stakes
-    const validators = await getValidators(validatorIds);
-    const networkStake = validators.reduce((sum, v) => sum + v.stakeMon, 0);
+    const epoch = latestEpoch[0];
+    const agg = stakeAgg[0];
 
     return NextResponse.json({
-      monPrice: monPrice > 0 ? monPrice : defaults.monPrice,
-      networkStake: Math.round(networkStake),
-      activeValidators: validatorIds.length,
-      updatedAt: new Date().toISOString(),
+      monPrice: monPrice > 0 ? monPrice : (epoch ? Number(epoch.monPriceUsd) || defaults.monPrice : defaults.monPrice),
+      networkStake: epoch ? Math.round(Number(epoch.totalStakeMon)) : (agg ? Math.round(Number(agg.totalStake)) : defaults.networkStake),
+      activeValidators: epoch?.activeValidators ?? agg?.count ?? defaults.activeValidators,
+      updatedAt: epoch?.createdAt?.toISOString() ?? null,
     });
   } catch (err) {
     console.error(

@@ -12,7 +12,14 @@ import { eq } from "drizzle-orm";
  *   200000000000000000 = 0.2 = 20%
  *   100000000000000000 = 0.1 = 10%
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const validatorIds = await getAllValidatorIds(false);
     const validatorData = await getValidators(validatorIds);

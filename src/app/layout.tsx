@@ -24,9 +24,19 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Monad Income Tracker",
+  title: "Monad Income Tracker | Phase",
   description:
     "Track historical validator income on Monad — block rewards, commission, and MEV broken down epoch by epoch.",
+  openGraph: {
+    title: "Monad Income Tracker | Phase",
+    description: "Historical validator income on Monad — block rewards & commission, epoch by epoch.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Monad Income Tracker | Phase",
+    description: "Historical validator income on Monad — block rewards & commission, epoch by epoch.",
+  },
 };
 
 export default function RootLayout({

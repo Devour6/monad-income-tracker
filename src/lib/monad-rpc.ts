@@ -405,7 +405,10 @@ export function calculateEpochReward(
 
   const delta = accNew - accOld;
   const rewardWei = (delta * stakeWei) / WEI_PER_MON;
-  const totalRewardMon = Number(rewardWei) / Number(WEI_PER_MON);
+  // Keep in BigInt until final division to avoid precision loss above 2^53
+  const rewardMon = rewardWei / WEI_PER_MON;
+  const remainder = rewardWei % WEI_PER_MON;
+  const totalRewardMon = Number(rewardMon) + Number(remainder) / Number(WEI_PER_MON);
 
   return { totalRewardMon, rewardWei };
 }

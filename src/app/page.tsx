@@ -34,11 +34,16 @@ interface IncomeSummaryData {
   totalEpochs: number;
   epochsWithIncome: number;
   totalBlockRewardsMon: number;
+  totalBlockRewardsUsd: number;
   totalCommissionMon: number;
   avgBlockRewardsPerEpoch: number;
   estimatedDailyMon: number;
+  estimatedDailyUsd: number;
   estimatedMonthlyMon: number;
+  estimatedMonthlyUsd: number;
   estimatedAnnualMon: number;
+  estimatedAnnualUsd: number;
+  latestMonPriceUsd: number;
 }
 
 export default function Home() {
@@ -109,6 +114,14 @@ export default function Home() {
             Historical validator income — block rewards & commission, epoch by
             epoch
           </p>
+          {validators.length > 0 && (
+            <div className="mt-3 inline-flex items-center gap-2 bg-cream-5 border border-cream-8 rounded-full px-3 py-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-phase-green animate-pulse" />
+              <span className="text-cream-40 text-xs font-body">
+                {validators.length} validators tracked
+              </span>
+            </div>
+          )}
         </header>
 
         {!dbReady ? (
@@ -121,12 +134,6 @@ export default function Home() {
                 </code>{" "}
                 and run the snapshot cron to start collecting data.
               </div>
-              <a
-                href="/calculator"
-                className="text-cream-40 hover:text-cream text-sm underline underline-offset-4 transition-colors"
-              >
-                Use the calculator instead
-              </a>
             </div>
           </div>
         ) : (

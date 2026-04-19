@@ -8,7 +8,7 @@ import {
   getMonPrice,
   calculateEpochReward,
 } from "@/lib/monad-rpc";
-import { eq, and } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
 
 /**
@@ -102,10 +102,12 @@ export async function GET(request: Request) {
       const prev = prevMap.get(v.validatorId);
       if (prev) {
         const prevAcc = BigInt(prev.accRewardPerToken);
+        // Use previous epoch's stake — that's the stake that earned the rewards
+        const prevStakeWei = BigInt(prev.stakeWei);
         const { totalRewardMon } = calculateEpochReward(
           prevAcc,
           v.accRewardPerToken,
-          v.stakeWei
+          prevStakeWei
         );
 
         if (totalRewardMon > 0) {
@@ -154,19 +156,20 @@ export async function GET(request: Request) {
       }
     }
 
-    // 9. Upsert validator metadata
-    for (const v of validatorRows) {
+    // 9. Batch upsert validator metadata (50 at a time to avoid query size limits)
+    for (let i = 0; i < validatorRows.length; i += 50) {
+      const batch = validatorRows.slice(i, i + 50);
       await db
         .insert(validators)
-        .values(v)
+        .values(batch)
         .onConflictDoUpdate({
           target: validators.validatorId,
           set: {
-            authAddress: v.authAddress,
-            name: v.name,
-            stakeMon: v.stakeMon,
-            commissionPct: v.commissionPct,
-            lastEpoch: v.lastEpoch,
+            authAddress: sql`excluded.auth_address`,
+            name: sql`excluded.name`,
+            stakeMon: sql`excluded.stake_mon`,
+            commissionPct: sql`excluded.commission_pct`,
+            lastEpoch: sql`excluded.last_epoch`,
             updatedAt: new Date(),
           },
         });

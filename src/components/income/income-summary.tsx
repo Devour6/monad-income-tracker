@@ -6,11 +6,16 @@ interface IncomeSummaryData {
   totalEpochs: number;
   epochsWithIncome: number;
   totalBlockRewardsMon: number;
+  totalBlockRewardsUsd: number;
   totalCommissionMon: number;
   avgBlockRewardsPerEpoch: number;
   estimatedDailyMon: number;
+  estimatedDailyUsd: number;
   estimatedMonthlyMon: number;
+  estimatedMonthlyUsd: number;
   estimatedAnnualMon: number;
+  estimatedAnnualUsd: number;
+  latestMonPriceUsd: number;
 }
 
 interface ValidatorListItem {
@@ -31,6 +36,14 @@ function formatMon(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
   if (n >= 1) return n.toFixed(2);
   return n.toFixed(4);
+}
+
+function formatUsd(n: number): string {
+  if (!n || n === 0) return "";
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(4)}`;
 }
 
 function Skeleton() {
@@ -55,6 +68,7 @@ export function IncomeSummary({
     {
       label: "Est. Daily",
       value: summary ? formatMon(summary.estimatedDailyMon) : null,
+      usdValue: summary ? formatUsd(summary.estimatedDailyUsd) : null,
       unit: "MON",
       icon: CalendarDays,
       sublabel: "~4.36 epochs/day",
@@ -62,6 +76,7 @@ export function IncomeSummary({
     {
       label: "Est. Monthly",
       value: summary ? formatMon(summary.estimatedMonthlyMon) : null,
+      usdValue: summary ? formatUsd(summary.estimatedMonthlyUsd) : null,
       unit: "MON",
       icon: Coins,
       sublabel: "30-day projection",
@@ -69,6 +84,7 @@ export function IncomeSummary({
     {
       label: "Est. Annual",
       value: summary ? formatMon(summary.estimatedAnnualMon) : null,
+      usdValue: summary ? formatUsd(summary.estimatedAnnualUsd) : null,
       unit: "MON",
       icon: TrendingUp,
       sublabel: "365-day projection",
@@ -112,9 +128,15 @@ export function IncomeSummary({
                     {card.unit}
                   </span>
                 </div>
-                <div className="text-cream-20 text-xs font-body mt-1">
-                  {card.sublabel}
-                </div>
+                {"usdValue" in card && card.usdValue ? (
+                  <div className="text-cream-20 text-xs font-body mt-1">
+                    {card.usdValue}
+                  </div>
+                ) : (
+                  <div className="text-cream-20 text-xs font-body mt-1">
+                    {card.sublabel}
+                  </div>
+                )}
               </>
             )}
           </div>

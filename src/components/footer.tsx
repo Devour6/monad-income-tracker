@@ -7,7 +7,7 @@ export function Footer() {
       style={{ animationDelay: "0.48s" }}
     >
       <span className="font-display font-normal text-cream-40">Phase</span>
-      {" "}&mdash; Monad Validator Evaluation Tool &mdash; March 2026
+      {" "}&mdash; Monad Validator Income Tracker
     </footer>
   );
 }

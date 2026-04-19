@@ -8,7 +8,14 @@ import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
  * Updates all validator names in the DB from the official Monad validator registry.
  * Source: github.com/monad-developers/validator-info
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     // Try fetching fresh from GitHub, fall back to embedded
     const registry = await fetchFreshRegistry().catch(() => VALIDATOR_NAMES);

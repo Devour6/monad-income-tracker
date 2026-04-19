@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { epochSnapshots, networkEpochs } from "@/lib/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 
 /**
  * GET /api/validators/[id]/income?epochs=30
@@ -50,10 +50,7 @@ export async function GET(
     const networkData = await db
       .select()
       .from(networkEpochs)
-      .where(
-        // Get all network epochs for our range
-        eq(networkEpochs.epoch, epochIds[0]) // simplified — will improve
-      );
+      .where(inArray(networkEpochs.epoch, epochIds));
 
     // Build a map of epoch → MON price
     const priceMap = new Map<number, number>();
@@ -75,8 +72,9 @@ export async function GET(
 
       const blockRewards = Number(curr.blockRewardsMon) || 0;
       const commissionIncome = Number(curr.commissionMon) || 0;
-      const stakeMon =
-        Number(BigInt(curr.stakeWei) / BigInt(10) ** BigInt(18));
+      const stakeWei = BigInt(curr.stakeWei);
+      const WEI = BigInt(10) ** BigInt(18);
+      const stakeMon = Number(stakeWei / WEI) + Number(stakeWei % WEI) / Number(WEI);
       const monPrice = priceMap.get(curr.epoch) || 0;
 
       totalBlockRewards += blockRewards;
@@ -104,20 +102,33 @@ export async function GET(
     // ~4.36 epochs per day (50,000 blocks/epoch, ~216,000 blocks/day)
     const epochsPerDay = 4.36;
 
-    return NextResponse.json({
+    // Get latest MON price for USD estimates
+    const latestPrice = incomeHistory.length > 0
+      ? incomeHistory[incomeHistory.length - 1].monPriceUsd
+      : 0;
+    const totalUsd = incomeHistory.reduce((sum, e) => sum + e.totalUsd, 0);
+
+    const response = NextResponse.json({
       validatorId,
       epochs: incomeHistory.reverse(), // Return newest first
       summary: {
         totalEpochs: incomeHistory.length,
         epochsWithIncome: epochsWithData.length,
         totalBlockRewardsMon: totalBlockRewards,
+        totalBlockRewardsUsd: totalUsd,
         totalCommissionMon: totalCommission,
         avgBlockRewardsPerEpoch: avgPerEpoch,
         estimatedDailyMon: avgPerEpoch * epochsPerDay,
+        estimatedDailyUsd: avgPerEpoch * epochsPerDay * latestPrice,
         estimatedMonthlyMon: avgPerEpoch * epochsPerDay * 30,
+        estimatedMonthlyUsd: avgPerEpoch * epochsPerDay * 30 * latestPrice,
         estimatedAnnualMon: avgPerEpoch * epochsPerDay * 365,
+        estimatedAnnualUsd: avgPerEpoch * epochsPerDay * 365 * latestPrice,
+        latestMonPriceUsd: latestPrice,
       },
     });
+    response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+    return response;
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },
