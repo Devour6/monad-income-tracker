@@ -39,10 +39,12 @@ export async function GET(request: Request) {
     const accOld = BigInt(older.accRewardPerToken);
     const stakeWei = BigInt(older.stakeWei);
     const WEI = BigInt(10) ** BigInt(18);
+    const ACC_DENOM = BigInt(10) ** BigInt(36);
 
     const delta = accNew - accOld;
     const ZERO = BigInt(0);
-    const rewardWei = delta > ZERO ? (delta * stakeWei) / WEI : ZERO;
+    // Monad accumulator uses 10^36 precision
+    const rewardWei = delta > ZERO ? (delta * stakeWei) / ACC_DENOM : ZERO;
     const rewardMon = rewardWei > ZERO
       ? Number(rewardWei / WEI) + Number(rewardWei % WEI) / Number(WEI)
       : 0;

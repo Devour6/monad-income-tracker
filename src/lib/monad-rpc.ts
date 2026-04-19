@@ -31,6 +31,12 @@ const GET_EXECUTION_VALIDATOR_SET = "0x7cb074df";
 const GET_VALIDATOR = "0x2b6d639a";
 
 const WEI_PER_MON = BigInt(10) ** BigInt(18);
+/**
+ * Monad's staking accumulator uses 1e36 precision.
+ * See: monad-developers/staking-sdk-cli (query_menu.py divides by 10**36)
+ * Formula: reward_wei = (accNew - accOld) * stakeWei / ACCUMULATOR_DENOMINATOR
+ */
+const ACCUMULATOR_DENOMINATOR = BigInt(10) ** BigInt(36);
 
 function encodeUint32(n: number): string {
   return n.toString(16).padStart(64, "0");
@@ -389,7 +395,8 @@ export async function getMonPrice(): Promise<number> {
 /**
  * Calculate block reward income between two accumulator snapshots.
  *
- * Formula: reward_wei = (accNew - accOld) * stakeWei / 10^18
+ * Monad's accRewardPerToken uses ACCUMULATOR_DENOMINATOR = 10^36.
+ * Formula: reward_wei = (accNew - accOld) * stakeWei / 10^36
  * Then convert to MON: reward_mon = reward_wei / 10^18
  *
  * This gives the TOTAL block rewards for the validator's stake.
@@ -404,8 +411,9 @@ export function calculateEpochReward(
   if (accNew <= accOld) return { totalRewardMon: 0, rewardWei: BigInt(0) };
 
   const delta = accNew - accOld;
-  const rewardWei = (delta * stakeWei) / WEI_PER_MON;
-  // Keep in BigInt until final division to avoid precision loss above 2^53
+  // Divide by ACCUMULATOR_DENOMINATOR (10^36) to get reward in wei
+  const rewardWei = (delta * stakeWei) / ACCUMULATOR_DENOMINATOR;
+  // Convert wei to MON (divide by 10^18)
   const rewardMon = rewardWei / WEI_PER_MON;
   const remainder = rewardWei % WEI_PER_MON;
   const totalRewardMon = Number(rewardMon) + Number(remainder) / Number(WEI_PER_MON);

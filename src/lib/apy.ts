@@ -2,16 +2,19 @@
  * APY computation utility for Monad staking rewards.
  *
  * Computes annualized yield from accumulator deltas.
+ * Monad's accRewardPerToken uses ACCUMULATOR_DENOMINATOR = 10^36.
  *
  * Formula:
- *   epoch_return = (accNew - accOld) * stakeWei / 10^18 / 10^18 / stakeMon
- *   epochs_per_year = 4.36 * 365
- *   apy = epoch_return * epochs_per_year * 100
+ *   reward_wei = (accNew - accOld) * stakeWei / 10^36
+ *   reward_mon = reward_wei / 10^18
+ *   epoch_return = reward_mon / stakeMon
+ *   apy = epoch_return / epochSpan * epochs_per_year * 100
  *
  * For multi-epoch spans, divide by number of epochs to get per-epoch return.
  */
 
 const WEI_PER_MON = BigInt(10) ** BigInt(18);
+const ACCUMULATOR_DENOMINATOR = BigInt(10) ** BigInt(36);
 
 /** ~4.36 epochs per day on Monad (50,000 blocks/epoch, ~216,000 blocks/day) */
 export const EPOCHS_PER_DAY = 4.36;
@@ -39,11 +42,11 @@ export function computeApy(
   }
 
   // Reward in wei for the full epoch span:
-  //   rewardWei = (accNew - accOld) * stakeWei / 10^18
+  //   rewardWei = (accNew - accOld) * stakeWei / ACCUMULATOR_DENOMINATOR (10^36)
   const delta = accNew - accOld;
-  const rewardWei = (delta * stakeWei) / WEI_PER_MON;
+  const rewardWei = (delta * stakeWei) / ACCUMULATOR_DENOMINATOR;
 
-  // Convert rewardWei to MON (divide by 10^18 again)
+  // Convert rewardWei to MON (divide by 10^18)
   const rewardMon =
     Number(rewardWei / WEI_PER_MON) +
     Number(rewardWei % WEI_PER_MON) / Number(WEI_PER_MON);
