@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { Activity, GitCompareArrows, ExternalLink } from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
 import { Footer } from "@/components/footer";
@@ -122,6 +124,22 @@ export default function Home() {
               </span>
             </div>
           )}
+          <nav className="mt-4 flex items-center justify-center gap-3">
+            <Link
+              href="/network"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Network Overview
+            </Link>
+            <Link
+              href="/compare"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
+            >
+              <GitCompareArrows className="w-3.5 h-3.5" />
+              Compare Validators
+            </Link>
+          </nav>
         </header>
 
         {!dbReady ? (
@@ -149,8 +167,16 @@ export default function Home() {
 
             {selectedValidator && (
               <>
-                {/* Epoch Range Selector */}
-                <div className="flex items-center justify-end gap-2 mt-6 mb-2">
+                {/* Validator actions */}
+                <div className="flex items-center justify-between mt-6 mb-2">
+                  <Link
+                    href={`/validators/${selectedValidator.validatorId}`}
+                    className="inline-flex items-center gap-1.5 text-cream-40 text-xs font-body hover:text-phase-green transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Full validator detail
+                  </Link>
+                  <div className="flex items-center gap-2">
                   <span className="text-cream-40 text-xs font-body">
                     Showing
                   </span>
@@ -167,6 +193,7 @@ export default function Home() {
                       {n} epochs
                     </button>
                   ))}
+                  </div>
                 </div>
 
                 {/* Income Summary Cards */}
