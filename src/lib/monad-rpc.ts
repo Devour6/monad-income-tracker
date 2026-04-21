@@ -327,6 +327,102 @@ function decodeValidatorResponse(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Delegator queries — used to compute validator self-stake. The staking
+// precompile does not expose self-stake directly on getValidator; we have to
+// call getDelegator(validatorId, authAddress) where authAddress is the
+// validator's self-delegation address.
+// ---------------------------------------------------------------------------
+
+const GET_DELEGATOR = "0x573c1ce0";
+
+/**
+ * ABI-encoded return layout for getDelegator (each slot = 32 bytes):
+ *   Slot 0: stake (uint256) — active delegated stake in wei
+ *   Slot 1: accRewardPerToken (uint256)
+ *   Slot 2: totalRewards / rewardDebt (uint256)
+ *   Slot 3: deltaStake (uint256)
+ *   Slot 4: nextDeltaStake (uint256)
+ *   Slot 5: deltaEpoch (uint64)
+ *   Slot 6: nextDeltaEpoch (uint64)
+ */
+export interface DelegatorSnapshot {
+  validatorId: number;
+  delegator: string;
+  stakeWei: bigint;
+  accRewardPerToken: bigint;
+  totalRewards: bigint;
+}
+
+function encodeAddress(addr: string): string {
+  const clean = addr.startsWith("0x") ? addr.slice(2) : addr;
+  return clean.toLowerCase().padStart(64, "0");
+}
+
+function buildGetDelegatorCalldata(
+  validatorId: number,
+  delegator: string
+): string {
+  return (
+    GET_DELEGATOR + encodeUint64(BigInt(validatorId)) + encodeAddress(delegator)
+  );
+}
+
+function decodeDelegatorResponse(
+  hex: string,
+  validatorId: number,
+  delegator: string
+): DelegatorSnapshot {
+  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const slot = (n: number) => BigInt("0x" + h.slice(n * 64, (n + 1) * 64));
+  return {
+    validatorId,
+    delegator,
+    stakeWei: slot(0),
+    accRewardPerToken: slot(1),
+    totalRewards: slot(2),
+  };
+}
+
+/**
+ * Batch-fetch self-stake for a list of (validatorId, authAddress) pairs.
+ * Returns a Map keyed by validatorId -> stake in wei (bigint).
+ * Missing entries in the map mean the RPC call failed for that validator.
+ */
+export async function getSelfStakes(
+  pairs: Array<{ validatorId: number; authAddress: string }>
+): Promise<Map<number, bigint>> {
+  if (pairs.length === 0) return new Map();
+
+  const calls = pairs.map((p, i) => ({
+    data: buildGetDelegatorCalldata(p.validatorId, p.authAddress),
+    id: i,
+  }));
+
+  const results = await batchEthCall(calls);
+  const selfStakes = new Map<number, bigint>();
+
+  for (let i = 0; i < pairs.length; i++) {
+    const hex = results.get(i);
+    if (!hex || hex === "0x") continue;
+    try {
+      const snap = decodeDelegatorResponse(
+        hex,
+        pairs[i].validatorId,
+        pairs[i].authAddress
+      );
+      selfStakes.set(pairs[i].validatorId, snap.stakeWei);
+    } catch (err) {
+      console.log(
+        `[rpc] Failed to decode delegator response for validator ${pairs[i].validatorId}:`,
+        err
+      );
+    }
+  }
+
+  return selfStakes;
+}
+
 /** Fetch full validator data for a list of validator IDs */
 export async function getValidators(
   validatorIds: number[]

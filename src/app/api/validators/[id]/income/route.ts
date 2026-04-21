@@ -75,9 +75,13 @@ export async function GET(
       poolRewardsMon: number;
       commissionMon: number;
       delegatorRewardsMon: number;
+      selfStakeRewardsMon: number; // validator's share of delegator pool from their own stake
+      validatorTotalMon: number;   // commission + self-stake share = true company income
       poolRewardsUsd: number;
       commissionUsd: number;
+      validatorTotalUsd: number;
       stakeMon: number;
+      selfStakeMon: number | null; // null when we don't have self-stake data for this epoch
       commissionPct: number;
       monPriceUsd: number;
       timestamp: string;
@@ -85,7 +89,10 @@ export async function GET(
 
     let totalPoolRewards = 0;
     let totalCommission = 0;
+    let totalSelfStakeRewards = 0;
+    let totalValidatorIncome = 0;
     let totalEpochSpan = 0;
+    let hasSelfStakeData = false;
 
     for (let i = 1; i < chronological.length; i++) {
       const prev = chronological[i - 1];
@@ -104,15 +111,42 @@ export async function GET(
       const commissionMon = poolRewardsMon * commissionRate;
       const delegatorRewardsMon = poolRewardsMon - commissionMon;
 
-      const stakeWei = BigInt(curr.stakeWei);
       const WEI = BigInt(10) ** BigInt(18);
+      const stakeWei = BigInt(curr.stakeWei);
       const stakeMon =
         Number(stakeWei / WEI) + Number(stakeWei % WEI) / Number(WEI);
+
+      // Self-stake share: validator's portion of the delegator pool earned on
+      // their own self-delegated stake. Uses the PREVIOUS epoch's self-stake
+      // (same logic as using prev.stakeWei for pool rewards — that's the
+      // stake that earned this epoch's rewards).
+      let selfStakeMon: number | null = null;
+      let selfStakeRewardsMon = 0;
+      if (prev.selfStakeWei != null) {
+        hasSelfStakeData = true;
+        const prevSelfStakeWei = BigInt(prev.selfStakeWei);
+        selfStakeMon =
+          Number(prevSelfStakeWei / WEI) +
+          Number(prevSelfStakeWei % WEI) / Number(WEI);
+        if (prevStakeWei > BigInt(0) && delegatorRewardsMon > 0) {
+          // share = selfStake / totalStake — compute with BigInt ratio for
+          // precision then scale
+          const RATIO_SCALE = BigInt(10) ** BigInt(18);
+          const shareScaled = (prevSelfStakeWei * RATIO_SCALE) / prevStakeWei;
+          const share = Number(shareScaled) / Number(RATIO_SCALE);
+          selfStakeRewardsMon = delegatorRewardsMon * share;
+        }
+      }
+
+      const validatorTotalMon = commissionMon + selfStakeRewardsMon;
+
       const monPrice = priceMap.get(curr.epoch) || 0;
       const epochSpan = curr.epoch - prev.epoch;
 
       totalPoolRewards += poolRewardsMon;
       totalCommission += commissionMon;
+      totalSelfStakeRewards += selfStakeRewardsMon;
+      totalValidatorIncome += validatorTotalMon;
       totalEpochSpan += epochSpan;
 
       incomeHistory.push({
@@ -121,9 +155,13 @@ export async function GET(
         poolRewardsMon,
         commissionMon,
         delegatorRewardsMon,
+        selfStakeRewardsMon,
+        validatorTotalMon,
         poolRewardsUsd: poolRewardsMon * monPrice,
         commissionUsd: commissionMon * monPrice,
+        validatorTotalUsd: validatorTotalMon * monPrice,
         stakeMon,
+        selfStakeMon,
         commissionPct: commissionRate * 100,
         monPriceUsd: monPrice,
         timestamp: curr.createdAt.toISOString(),
@@ -138,6 +176,10 @@ export async function GET(
       totalEpochSpan > 0 ? totalPoolRewards / totalEpochSpan : 0;
     const avgCommissionPerEpoch =
       totalEpochSpan > 0 ? totalCommission / totalEpochSpan : 0;
+    const avgSelfStakePerEpoch =
+      totalEpochSpan > 0 ? totalSelfStakeRewards / totalEpochSpan : 0;
+    const avgValidatorPerEpoch =
+      totalEpochSpan > 0 ? totalValidatorIncome / totalEpochSpan : 0;
 
     const latestPrice = incomeHistory.length > 0
       ? incomeHistory[incomeHistory.length - 1].monPriceUsd
@@ -145,6 +187,16 @@ export async function GET(
 
     const totalPoolUsd = incomeHistory.reduce((s, e) => s + e.poolRewardsUsd, 0);
     const totalCommissionUsd = incomeHistory.reduce((s, e) => s + e.commissionUsd, 0);
+    const totalValidatorUsd = incomeHistory.reduce((s, e) => s + e.validatorTotalUsd, 0);
+
+    // Latest self-stake (for headline display)
+    const latestSnap = chronological[chronological.length - 1];
+    const WEI = BigInt(10) ** BigInt(18);
+    let currentSelfStakeMon: number | null = null;
+    if (latestSnap?.selfStakeWei != null) {
+      const sw = BigInt(latestSnap.selfStakeWei);
+      currentSelfStakeMon = Number(sw / WEI) + Number(sw % WEI) / Number(WEI);
+    }
 
     const response = NextResponse.json({
       validatorId,
@@ -159,6 +211,13 @@ export async function GET(
           commissionMon: totalCommission,
           commissionUsd: totalCommissionUsd,
           delegatorRewardsMon: totalPoolRewards - totalCommission,
+          // Validator company's true realized income: commission + their share
+          // of the delegator pool earned on their own self-stake.
+          // Null when we don't have self-stake data yet (historical rows).
+          selfStakeRewardsMon: hasSelfStakeData ? totalSelfStakeRewards : null,
+          validatorTotalMon: hasSelfStakeData ? totalValidatorIncome : null,
+          validatorTotalUsd: hasSelfStakeData ? totalValidatorUsd : null,
+          currentSelfStakeMon,
           firstEpoch: incomeHistory[0]?.epoch ?? null,
           lastEpoch: incomeHistory[incomeHistory.length - 1]?.epoch ?? null,
         },
@@ -177,7 +236,18 @@ export async function GET(
           poolPerDayUsd: avgPoolPerEpoch * EPOCHS_PER_DAY * latestPrice,
           poolPerMonthUsd: avgPoolPerEpoch * EPOCHS_PER_DAY * 30 * latestPrice,
           poolPerYearUsd: avgPoolPerEpoch * EPOCHS_PER_YEAR * latestPrice,
+          // Validator company rates (commission + self-stake share) — only
+          // meaningful once we have at least one epoch with self-stake data.
+          validatorPerEpochMon: hasSelfStakeData ? avgValidatorPerEpoch : null,
+          validatorPerDayMon: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_DAY : null,
+          validatorPerMonthMon: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_DAY * 30 : null,
+          validatorPerYearMon: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_YEAR : null,
+          validatorPerDayUsd: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_DAY * latestPrice : null,
+          validatorPerMonthUsd: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_DAY * 30 * latestPrice : null,
+          validatorPerYearUsd: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_YEAR * latestPrice : null,
+          avgSelfStakePerEpochMon: hasSelfStakeData ? avgSelfStakePerEpoch : null,
         },
+        hasSelfStakeData,
         latestMonPriceUsd: latestPrice,
       },
     });

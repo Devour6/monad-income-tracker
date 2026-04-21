@@ -28,6 +28,9 @@ export const epochSnapshots = pgTable(
     commission: text("commission").notNull(),
     /** Unclaimed rewards in wei (uint256 as text) */
     unclaimedRewards: text("unclaimed_rewards").notNull(),
+    /** Validator's own self-delegation stake in wei (uint256 as text). Nullable
+     *  because historical rows predating self-stake tracking won't have it. */
+    selfStakeWei: text("self_stake_wei"),
     /** Block reward income this epoch in MON (computed from accumulator delta) */
     blockRewardsMon: numeric("block_rewards_mon", {
       precision: 30,

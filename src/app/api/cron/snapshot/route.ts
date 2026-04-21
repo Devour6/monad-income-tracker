@@ -7,6 +7,7 @@ import {
   getValidators,
   getMonPrice,
   calculateEpochReward,
+  getSelfStakes,
 } from "@/lib/monad-rpc";
 import { eq, sql, desc } from "drizzle-orm";
 import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
@@ -72,11 +73,26 @@ export async function GET(request: Request) {
     const validatorData = await getValidators(validatorIds);
     console.log(`[snapshot] Fetched data for ${validatorData.length} validators`);
 
-    // 5. Get MON price + fresh validator registry
-    const [monPrice, nameRegistry] = await Promise.all([
+    // 5. Get MON price + fresh validator registry + self-stakes (one RPC call
+    //    per validator against getDelegator(validatorId, authAddress) — the
+    //    staking precompile doesn't expose self-stake on getValidator so we
+    //    have to query the validator's own delegation entry directly).
+    const [monPrice, nameRegistry, selfStakeMap] = await Promise.all([
       getMonPrice(),
       fetchFreshRegistry().catch(() => VALIDATOR_NAMES),
+      getSelfStakes(
+        validatorData.map((v) => ({
+          validatorId: v.validatorId,
+          authAddress: v.authAddress,
+        }))
+      ).catch((err) => {
+        console.log("[snapshot] getSelfStakes failed:", err);
+        return new Map<number, bigint>();
+      }),
     ]);
+    console.log(
+      `[snapshot] Fetched self-stake for ${selfStakeMap.size}/${validatorData.length} validators`
+    );
 
     // 6. Get the most recent previous epoch's snapshots for delta computation
     // (epochs may not be consecutive if the cron skips some)
@@ -131,6 +147,8 @@ export async function GET(request: Request) {
         }
       }
 
+      const selfStakeWei = selfStakeMap.get(v.validatorId);
+
       snapshotRows.push({
         epoch,
         validatorId: v.validatorId,
@@ -138,6 +156,7 @@ export async function GET(request: Request) {
         stakeWei: v.stakeWei.toString(),
         commission: v.commission.toString(),
         unclaimedRewards: v.unclaimedRewards.toString(),
+        selfStakeWei: selfStakeWei != null ? selfStakeWei.toString() : null,
         blockRewardsMon,
         commissionMon,
       });
