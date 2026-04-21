@@ -110,6 +110,10 @@ export async function GET(
       epochsWithData.length > 0
         ? totalBlockRewards / epochsWithData.length
         : 0;
+    const avgCommissionPerEpoch =
+      epochsWithData.length > 0
+        ? totalCommission / epochsWithData.length
+        : 0;
 
     // ~4.36 epochs per day (50,000 blocks/epoch, ~216,000 blocks/day)
     const epochsPerDay = 4.36;
@@ -130,12 +134,13 @@ export async function GET(
         totalBlockRewardsUsd: totalUsd,
         totalCommissionMon: totalCommission,
         avgBlockRewardsPerEpoch: avgPerEpoch,
-        estimatedDailyMon: avgPerEpoch * epochsPerDay,
-        estimatedDailyUsd: avgPerEpoch * epochsPerDay * latestPrice,
-        estimatedMonthlyMon: avgPerEpoch * epochsPerDay * 30,
-        estimatedMonthlyUsd: avgPerEpoch * epochsPerDay * 30 * latestPrice,
-        estimatedAnnualMon: avgPerEpoch * epochsPerDay * 365,
-        estimatedAnnualUsd: avgPerEpoch * epochsPerDay * 365 * latestPrice,
+        avgCommissionPerEpoch,
+        estimatedDailyMon: avgCommissionPerEpoch * epochsPerDay,
+        estimatedDailyUsd: avgCommissionPerEpoch * epochsPerDay * latestPrice,
+        estimatedMonthlyMon: avgCommissionPerEpoch * epochsPerDay * 30,
+        estimatedMonthlyUsd: avgCommissionPerEpoch * epochsPerDay * 30 * latestPrice,
+        estimatedAnnualMon: avgCommissionPerEpoch * epochsPerDay * 365,
+        estimatedAnnualUsd: avgCommissionPerEpoch * epochsPerDay * 365 * latestPrice,
         latestMonPriceUsd: latestPrice,
       },
     });
