@@ -5,11 +5,14 @@ import { Download, ArrowUpDown } from "lucide-react";
 
 interface EpochIncome {
   epoch: number;
-  blockRewardsMon: number;
+  epochSpan: number;
+  poolRewardsMon: number;
   commissionMon: number;
-  totalMon: number;
-  totalUsd: number;
+  delegatorRewardsMon: number;
+  poolRewardsUsd: number;
+  commissionUsd: number;
   stakeMon: number;
+  commissionPct: number;
   monPriceUsd: number;
   timestamp: string;
 }
@@ -19,10 +22,18 @@ interface IncomeTableProps {
   loading: boolean;
 }
 
-type SortKey = "epoch" | "totalMon" | "totalUsd" | "blockRewardsMon" | "commissionMon";
+type SortKey =
+  | "epoch"
+  | "epochSpan"
+  | "poolRewardsMon"
+  | "commissionMon"
+  | "delegatorRewardsMon"
+  | "commissionUsd";
 type SortDir = "asc" | "desc";
 
 function formatMon(n: number): string {
+  if (!isFinite(n)) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
   if (n >= 1) return n.toFixed(4);
   if (n >= 0.001) return n.toFixed(4);
@@ -30,6 +41,8 @@ function formatMon(n: number): string {
 }
 
 function formatUsd(n: number): string {
+  if (!isFinite(n) || n === 0) return "—";
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(2)}K`;
   if (n >= 1) return `$${n.toFixed(2)}`;
   if (n >= 0.01) return `$${n.toFixed(2)}`;
@@ -39,23 +52,27 @@ function formatUsd(n: number): string {
 function exportCsv(data: EpochIncome[]) {
   const headers = [
     "Epoch",
+    "Epoch Span",
     "Date",
-    "Block Rewards (MON)",
+    "Pool Rewards (MON)",
     "Commission (MON)",
-    "Total (MON)",
-    "Total (USD)",
+    "Delegator Rewards (MON)",
+    "Commission (USD)",
     "Stake (MON)",
+    "Commission %",
     "MON Price (USD)",
   ];
 
   const rows = data.map((d) => [
     d.epoch,
+    d.epochSpan,
     new Date(d.timestamp).toISOString().split("T")[0],
-    d.blockRewardsMon,
+    d.poolRewardsMon,
     d.commissionMon,
-    d.totalMon,
-    d.totalUsd,
+    d.delegatorRewardsMon,
+    d.commissionUsd,
     d.stakeMon,
+    d.commissionPct,
     d.monPriceUsd,
   ]);
 
@@ -76,8 +93,8 @@ export function IncomeTable({ data, loading }: IncomeTableProps) {
   const sorted = useMemo(() => {
     const copy = [...data];
     copy.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
+      const av = a[sortKey] as number;
+      const bv = b[sortKey] as number;
       return sortDir === "asc" ? av - bv : bv - av;
     });
     return copy;
@@ -109,8 +126,8 @@ export function IncomeTable({ data, loading }: IncomeTableProps) {
       <div className="mt-6 bg-cream-5 border border-cream-8 rounded-xl p-6">
         <div className="h-48 flex items-center justify-center">
           <div className="text-cream-20 text-sm font-body">
-            No income data yet. Run the snapshot cron to start collecting epoch
-            data.
+            No realized income data yet. Need at least 2 snapshots from the
+            cron to compute deltas.
           </div>
         </div>
       </div>
@@ -119,18 +136,23 @@ export function IncomeTable({ data, loading }: IncomeTableProps) {
 
   const columns: { key: SortKey; label: string; align: "left" | "right" }[] = [
     { key: "epoch", label: "Epoch", align: "left" },
-    { key: "blockRewardsMon", label: "Block Rewards", align: "right" },
+    { key: "epochSpan", label: "Span", align: "right" },
     { key: "commissionMon", label: "Commission", align: "right" },
-    { key: "totalMon", label: "Total (MON)", align: "right" },
-    { key: "totalUsd", label: "Total (USD)", align: "right" },
+    { key: "commissionUsd", label: "Commission $", align: "right" },
+    { key: "delegatorRewardsMon", label: "Delegator Payout", align: "right" },
+    { key: "poolRewardsMon", label: "Pool Total", align: "right" },
   ];
+
+  const totalCommission = data.reduce((s, d) => s + d.commissionMon, 0);
+  const totalCommissionUsd = data.reduce((s, d) => s + d.commissionUsd, 0);
+  const totalPool = data.reduce((s, d) => s + d.poolRewardsMon, 0);
 
   return (
     <div className="mt-6 bg-cream-5 border border-cream-8 rounded-xl overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-cream-8">
         <h3 className="text-cream text-sm font-body font-medium uppercase tracking-wider">
-          Epoch-by-Epoch Income
+          Realized Income by Snapshot
         </h3>
         <button
           onClick={() => exportCsv(data)}
@@ -177,16 +199,19 @@ export function IncomeTable({ data, loading }: IncomeTableProps) {
                   {row.epoch}
                 </td>
                 <td className="px-6 py-3 text-sm font-mono text-cream-40 text-right">
-                  {formatMon(row.blockRewardsMon)}
-                </td>
-                <td className="px-6 py-3 text-sm font-mono text-cream-40 text-right">
-                  {formatMon(row.commissionMon)}
+                  {row.epochSpan}
                 </td>
                 <td className="px-6 py-3 text-sm font-mono text-phase-green text-right font-medium">
-                  {formatMon(row.totalMon)}
+                  {formatMon(row.commissionMon)}
+                </td>
+                <td className="px-6 py-3 text-sm font-mono text-phase-green/70 text-right">
+                  {formatUsd(row.commissionUsd)}
                 </td>
                 <td className="px-6 py-3 text-sm font-mono text-cream-40 text-right">
-                  {row.totalUsd > 0 ? formatUsd(row.totalUsd) : "—"}
+                  {formatMon(row.delegatorRewardsMon)}
+                </td>
+                <td className="px-6 py-3 text-sm font-mono text-cream-40 text-right">
+                  {formatMon(row.poolRewardsMon)}
                 </td>
                 <td className="px-6 py-3 text-sm font-mono text-cream-20 text-right">
                   {new Date(row.timestamp).toLocaleDateString("en-US", {
@@ -203,14 +228,27 @@ export function IncomeTable({ data, loading }: IncomeTableProps) {
       {/* Footer summary */}
       <div className="flex items-center justify-between px-6 py-3 border-t border-cream-8 bg-cream-3">
         <span className="text-cream-20 text-xs font-body">
-          {data.length} epochs
+          {data.length} snapshots
         </span>
-        <span className="text-cream-40 text-xs font-mono">
-          Total:{" "}
-          <span className="text-phase-green font-medium">
-            {formatMon(data.reduce((s, d) => s + d.totalMon, 0))} MON
+        <div className="flex items-center gap-4 text-xs font-mono">
+          <span className="text-cream-40">
+            Commission:{" "}
+            <span className="text-phase-green font-medium">
+              {formatMon(totalCommission)} MON
+            </span>
+            {totalCommissionUsd > 0 && (
+              <span className="text-phase-green/70 ml-1">
+                ({formatUsd(totalCommissionUsd)})
+              </span>
+            )}
           </span>
-        </span>
+          <span className="text-cream-40">
+            Pool:{" "}
+            <span className="text-cream-60 font-medium">
+              {formatMon(totalPool)} MON
+            </span>
+          </span>
+        </div>
       </div>
     </div>
   );

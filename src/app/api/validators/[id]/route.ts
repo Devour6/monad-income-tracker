@@ -12,12 +12,10 @@ const WEI_PER_MON = BigInt(10) ** BigInt(18);
  *
  * Returns detailed info for a single validator:
  * - Basic metadata from the validators table
- * - APY computed from the latest 2 epoch snapshots
- * - Stake history (last N epochs)
- * - Commission history (last N epochs)
- *
- * Query params:
- *   - epochs: Number of epochs of history to return (default 30, max 365)
+ * - APY computed from the latest 2 epoch snapshots (pool-level, gross of commission)
+ * - Realized income: commission, pool, delegator earnings over observed window
+ * - Stake history (last N snapshots)
+ * - Commission history (last N snapshots)
  */
 export async function GET(
   request: Request,
@@ -41,7 +39,6 @@ export async function GET(
   );
 
   try {
-    // 1. Get validator metadata
     const [validator] = await db
       .select()
       .from(validators)
@@ -55,7 +52,6 @@ export async function GET(
       );
     }
 
-    // 2. Get epoch snapshots for this validator (epochCount + 1 for delta computation)
     const snapshots = await db
       .select()
       .from(epochSnapshots)
@@ -63,64 +59,62 @@ export async function GET(
       .orderBy(desc(epochSnapshots.epoch))
       .limit(epochCount + 1);
 
-    // 3. Compute APY from the latest 2 snapshots
+    // APY from the latest 2 snapshots (pool-level)
     let apy = 0;
     if (snapshots.length >= 2) {
       const latest = snapshots[0];
       const prev = snapshots[1];
       const epochSpan = latest.epoch - prev.epoch;
-
       if (epochSpan > 0) {
-        const accOld = BigInt(prev.accRewardPerToken);
-        const accNew = BigInt(latest.accRewardPerToken);
-        const stakeWei = BigInt(prev.stakeWei);
-
-        apy = computeApy(accOld, accNew, stakeWei, epochSpan);
+        apy = computeApy(
+          BigInt(prev.accRewardPerToken),
+          BigInt(latest.accRewardPerToken),
+          BigInt(prev.stakeWei),
+          epochSpan
+        );
       }
     }
 
-    // 4. Build stake history and commission history from snapshots
-    //    Snapshots are already in desc order (newest first)
+    // Stake history
     const stakeHistory = snapshots.map((s) => {
       const sw = BigInt(s.stakeWei);
       const stakeMon =
-        Number(sw / WEI_PER_MON) + Number(sw % WEI_PER_MON) / Number(WEI_PER_MON);
-      return {
-        epoch: s.epoch,
-        stakeMon,
-        stakeWei: s.stakeWei,
-      };
+        Number(sw / WEI_PER_MON) +
+        Number(sw % WEI_PER_MON) / Number(WEI_PER_MON);
+      return { epoch: s.epoch, stakeMon, stakeWei: s.stakeWei };
     });
 
-    const commissionHistory = snapshots.map((s) => {
-      // Commission is an 18-decimal fixed-point value, e.g. 200000000000000000 = 20%
-      const commissionRaw = BigInt(s.commission);
-      const commissionPct = Number(commissionRaw) / 1e16; // Convert to percentage (0-100)
-      return {
-        epoch: s.epoch,
-        commissionPct,
-        commissionRaw: s.commission,
-      };
-    });
+    // Commission history (raw is 18-decimal fixed-point; /1e16 → percentage 0-100)
+    const commissionHistory = snapshots.map((s) => ({
+      epoch: s.epoch,
+      commissionPct: Number(BigInt(s.commission)) / 1e16,
+      commissionRaw: s.commission,
+    }));
 
-    // 5. Compute income summary from consecutive snapshot deltas
+    // Realized income across consecutive snapshot pairs
     const chronological = [...snapshots].reverse();
-    let totalIncomeMon = 0;
+    let totalPool = 0;
+    let totalCommission = 0;
+    let totalEpochSpan = 0;
 
     for (let i = 1; i < chronological.length; i++) {
       const prev = chronological[i - 1];
       const curr = chronological[i];
-
-      const accOld = BigInt(prev.accRewardPerToken);
-      const accNew = BigInt(curr.accRewardPerToken);
-      const stakeWei = BigInt(prev.stakeWei);
-
-      const { totalRewardMon } = calculateEpochReward(accOld, accNew, stakeWei);
-      totalIncomeMon += totalRewardMon;
+      const { totalRewardMon: poolMon } = calculateEpochReward(
+        BigInt(prev.accRewardPerToken),
+        BigInt(curr.accRewardPerToken),
+        BigInt(prev.stakeWei)
+      );
+      const commissionRate = Number(BigInt(curr.commission)) / 1e18;
+      totalPool += poolMon;
+      totalCommission += poolMon * commissionRate;
+      totalEpochSpan += curr.epoch - prev.epoch;
     }
 
-    const epochsWithData = chronological.length > 1 ? chronological.length - 1 : 0;
-    const avgPerEpoch = epochsWithData > 0 ? totalIncomeMon / epochsWithData : 0;
+    const avgPoolPerEpoch =
+      totalEpochSpan > 0 ? totalPool / totalEpochSpan : 0;
+    const avgCommissionPerEpoch =
+      totalEpochSpan > 0 ? totalCommission / totalEpochSpan : 0;
 
     const response = NextResponse.json({
       validator: {
@@ -134,12 +128,24 @@ export async function GET(
       },
       apy: Number(apy.toFixed(4)),
       income: {
-        totalIncomeMon,
-        epochsAnalyzed: epochsWithData,
-        avgPerEpoch,
-        estimatedDailyMon: avgPerEpoch * EPOCHS_PER_DAY,
-        estimatedMonthlyMon: avgPerEpoch * EPOCHS_PER_DAY * 30,
-        estimatedAnnualMon: avgPerEpoch * EPOCHS_PER_DAY * 365,
+        observed: {
+          epochCount: totalEpochSpan,
+          snapshotCount: chronological.length > 1 ? chronological.length - 1 : 0,
+          daysObserved: totalEpochSpan / EPOCHS_PER_DAY,
+          poolRewardsMon: totalPool,
+          commissionMon: totalCommission,
+          delegatorRewardsMon: totalPool - totalCommission,
+        },
+        rates: {
+          commissionPerEpochMon: avgCommissionPerEpoch,
+          commissionPerDayMon: avgCommissionPerEpoch * EPOCHS_PER_DAY,
+          commissionPerMonthMon: avgCommissionPerEpoch * EPOCHS_PER_DAY * 30,
+          commissionPerYearMon: avgCommissionPerEpoch * EPOCHS_PER_DAY * 365,
+          poolPerEpochMon: avgPoolPerEpoch,
+          poolPerDayMon: avgPoolPerEpoch * EPOCHS_PER_DAY,
+          poolPerMonthMon: avgPoolPerEpoch * EPOCHS_PER_DAY * 30,
+          poolPerYearMon: avgPoolPerEpoch * EPOCHS_PER_DAY * 365,
+        },
       },
       stakeHistory,
       commissionHistory,

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Activity, GitCompareArrows, ExternalLink } from "lucide-react";
+import { Activity, GitCompareArrows, ExternalLink, BookOpen } from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
 import { Footer } from "@/components/footer";
@@ -23,28 +23,47 @@ interface ValidatorListItem {
 
 interface EpochIncome {
   epoch: number;
-  blockRewardsMon: number;
+  epochSpan: number;
+  poolRewardsMon: number;
   commissionMon: number;
-  totalMon: number;
-  totalUsd: number;
+  delegatorRewardsMon: number;
+  poolRewardsUsd: number;
+  commissionUsd: number;
   stakeMon: number;
+  commissionPct: number;
   monPriceUsd: number;
   timestamp: string;
 }
 
 interface IncomeSummaryData {
-  totalEpochs: number;
-  epochsWithIncome: number;
-  totalBlockRewardsMon: number;
-  totalBlockRewardsUsd: number;
-  totalCommissionMon: number;
-  avgBlockRewardsPerEpoch: number;
-  estimatedDailyMon: number;
-  estimatedDailyUsd: number;
-  estimatedMonthlyMon: number;
-  estimatedMonthlyUsd: number;
-  estimatedAnnualMon: number;
-  estimatedAnnualUsd: number;
+  observed: {
+    epochCount: number;
+    snapshotCount: number;
+    daysObserved: number;
+    poolRewardsMon: number;
+    poolRewardsUsd: number;
+    commissionMon: number;
+    commissionUsd: number;
+    delegatorRewardsMon: number;
+    firstEpoch: number | null;
+    lastEpoch: number | null;
+  };
+  rates: {
+    commissionPerEpochMon: number;
+    commissionPerDayMon: number;
+    commissionPerMonthMon: number;
+    commissionPerYearMon: number;
+    poolPerEpochMon: number;
+    poolPerDayMon: number;
+    poolPerMonthMon: number;
+    poolPerYearMon: number;
+    commissionPerDayUsd: number;
+    commissionPerMonthUsd: number;
+    commissionPerYearUsd: number;
+    poolPerDayUsd: number;
+    poolPerMonthUsd: number;
+    poolPerYearUsd: number;
+  };
   latestMonPriceUsd: number;
 }
 
@@ -138,6 +157,13 @@ export default function Home() {
             >
               <GitCompareArrows className="w-3.5 h-3.5" />
               Compare Validators
+            </Link>
+            <Link
+              href="/docs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              API Docs
             </Link>
           </nav>
         </header>

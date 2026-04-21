@@ -1,20 +1,36 @@
 "use client";
 
-import { TrendingUp, Coins, CalendarDays, Zap } from "lucide-react";
+import { Wallet, Users, TrendingUp, Clock } from "lucide-react";
 
-interface IncomeSummaryData {
-  totalEpochs: number;
-  epochsWithIncome: number;
-  totalBlockRewardsMon: number;
-  totalBlockRewardsUsd: number;
-  totalCommissionMon: number;
-  avgBlockRewardsPerEpoch: number;
-  estimatedDailyMon: number;
-  estimatedDailyUsd: number;
-  estimatedMonthlyMon: number;
-  estimatedMonthlyUsd: number;
-  estimatedAnnualMon: number;
-  estimatedAnnualUsd: number;
+interface IncomeSummary {
+  observed: {
+    epochCount: number;
+    snapshotCount: number;
+    daysObserved: number;
+    poolRewardsMon: number;
+    poolRewardsUsd: number;
+    commissionMon: number;
+    commissionUsd: number;
+    delegatorRewardsMon: number;
+    firstEpoch: number | null;
+    lastEpoch: number | null;
+  };
+  rates: {
+    commissionPerEpochMon: number;
+    commissionPerDayMon: number;
+    commissionPerMonthMon: number;
+    commissionPerYearMon: number;
+    poolPerEpochMon: number;
+    poolPerDayMon: number;
+    poolPerMonthMon: number;
+    poolPerYearMon: number;
+    commissionPerDayUsd: number;
+    commissionPerMonthUsd: number;
+    commissionPerYearUsd: number;
+    poolPerDayUsd: number;
+    poolPerMonthUsd: number;
+    poolPerYearUsd: number;
+  };
   latestMonPriceUsd: number;
 }
 
@@ -26,12 +42,13 @@ interface ValidatorListItem {
 }
 
 interface IncomeSummaryProps {
-  summary: IncomeSummaryData | null;
+  summary: IncomeSummary | null;
   validator: ValidatorListItem;
   loading: boolean;
 }
 
 function formatMon(n: number): string {
+  if (!isFinite(n)) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
   if (n >= 1) return n.toFixed(2);
@@ -39,17 +56,22 @@ function formatMon(n: number): string {
 }
 
 function formatUsd(n: number): string {
-  if (!n || n === 0) return "";
+  if (!n || !isFinite(n) || n === 0) return "";
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
   if (n >= 1) return `$${n.toFixed(2)}`;
   return `$${n.toFixed(4)}`;
 }
 
+function formatDays(days: number): string {
+  if (days < 1) return `${(days * 24).toFixed(1)} hours`;
+  if (days < 30) return `${days.toFixed(1)} days`;
+  if (days < 365) return `${(days / 30).toFixed(1)} months`;
+  return `${(days / 365).toFixed(1)} years`;
+}
+
 function Skeleton() {
-  return (
-    <div className="h-8 w-24 bg-cream-5 rounded animate-pulse" />
-  );
+  return <div className="h-8 w-24 bg-cream-5 rounded animate-pulse" />;
 }
 
 export function IncomeSummary({
@@ -57,91 +79,179 @@ export function IncomeSummary({
   validator,
   loading,
 }: IncomeSummaryProps) {
-  const cards = [
+  const observed = summary?.observed;
+  const rates = summary?.rates;
+
+  // PRIMARY cards: REALIZED earnings in the observed window
+  const realizedCards = [
     {
-      label: "Avg per Epoch",
-      value: summary ? formatMon(summary.avgBlockRewardsPerEpoch) : null,
+      label: "Validator Commission",
+      value: observed ? formatMon(observed.commissionMon) : null,
+      usdValue: observed ? formatUsd(observed.commissionUsd) : null,
       unit: "MON",
-      icon: Zap,
-      sublabel: `${summary?.epochsWithIncome ?? 0} epochs tracked`,
+      icon: Wallet,
+      sublabel: observed
+        ? `Realized over ${formatDays(observed.daysObserved)}`
+        : "",
+      highlight: true,
     },
     {
-      label: "Est. Daily",
-      value: summary ? formatMon(summary.estimatedDailyMon) : null,
-      usdValue: summary ? formatUsd(summary.estimatedDailyUsd) : null,
+      label: "Pool Rewards",
+      value: observed ? formatMon(observed.poolRewardsMon) : null,
+      usdValue: observed ? formatUsd(observed.poolRewardsUsd) : null,
       unit: "MON",
-      icon: CalendarDays,
-      sublabel: "~4.36 epochs/day",
+      icon: Users,
+      sublabel: observed
+        ? `Earned by all stake (self + delegators)`
+        : "",
+      highlight: false,
     },
     {
-      label: "Est. Monthly",
-      value: summary ? formatMon(summary.estimatedMonthlyMon) : null,
-      usdValue: summary ? formatUsd(summary.estimatedMonthlyUsd) : null,
+      label: "Delegator Share",
+      value: observed ? formatMon(observed.delegatorRewardsMon) : null,
+      usdValue: null,
       unit: "MON",
-      icon: Coins,
-      sublabel: "30-day projection",
+      icon: Users,
+      sublabel: `Paid out to delegators (${validator.commissionPct}% commission)`,
+      highlight: false,
     },
     {
-      label: "Est. Annual",
-      value: summary ? formatMon(summary.estimatedAnnualMon) : null,
-      usdValue: summary ? formatUsd(summary.estimatedAnnualUsd) : null,
-      unit: "MON",
-      icon: TrendingUp,
-      sublabel: "365-day projection",
+      label: "Observation Window",
+      value: observed ? `${observed.epochCount}` : null,
+      usdValue: null,
+      unit: "epochs",
+      icon: Clock,
+      sublabel: observed
+        ? `${formatDays(observed.daysObserved)} • ${observed.snapshotCount} snapshots`
+        : "",
+      highlight: false,
     },
   ];
 
   return (
     <div className="mt-6">
-      {/* Validator name badge */}
-      <div className="flex items-center gap-3 mb-4">
+      {/* Validator name + realized headline */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <h2 className="font-display text-lg text-cream tracking-wide">
           {validator.name}
         </h2>
         <span className="text-cream-20 text-xs font-mono bg-cream-5 px-2 py-0.5 rounded">
           {validator.commissionPct}% commission
         </span>
+        {observed && observed.firstEpoch !== null && observed.lastEpoch !== null && (
+          <span className="text-cream-20 text-xs font-mono bg-cream-5 px-2 py-0.5 rounded">
+            epochs {observed.firstEpoch}–{observed.lastEpoch}
+          </span>
+        )}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {cards.map((card) => (
-          <div
-            key={card.label}
-            className="bg-cream-5 border border-cream-8 rounded-xl p-4 card-hover"
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <card.icon className="w-4 h-4 text-cream-40" />
-              <span className="text-cream-40 text-xs font-body uppercase tracking-wider">
-                {card.label}
-              </span>
+      {/* Realized earnings section */}
+      <div className="mb-2">
+        <h3 className="text-cream-40 text-[11px] font-body uppercase tracking-[0.12em] mb-3">
+          Realized Earnings
+        </h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {realizedCards.map((card) => (
+            <div
+              key={card.label}
+              className={`${card.highlight ? "bg-phase-green/5 border-phase-green/20" : "bg-cream-5 border-cream-8"} border rounded-xl p-4 card-hover`}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <card.icon
+                  className={`w-4 h-4 ${card.highlight ? "text-phase-green" : "text-cream-40"}`}
+                />
+                <span
+                  className={`text-xs font-body uppercase tracking-wider ${card.highlight ? "text-phase-green" : "text-cream-40"}`}
+                >
+                  {card.label}
+                </span>
+              </div>
+              {loading || !card.value ? (
+                <Skeleton />
+              ) : (
+                <>
+                  <div className="flex items-baseline gap-1.5">
+                    <span
+                      className={`text-2xl font-body font-semibold stat-shimmer ${card.highlight ? "text-phase-green" : "text-cream"}`}
+                    >
+                      {card.value}
+                    </span>
+                    <span className="text-cream-40 text-xs font-body">
+                      {card.unit}
+                    </span>
+                  </div>
+                  {card.usdValue ? (
+                    <div className={`text-xs font-body mt-1 ${card.highlight ? "text-phase-green/70" : "text-cream-20"}`}>
+                      {card.usdValue}
+                    </div>
+                  ) : card.sublabel ? (
+                    <div className="text-cream-20 text-xs font-body mt-1">
+                      {card.sublabel}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
-            {loading || !card.value ? (
-              <Skeleton />
-            ) : (
-              <>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-cream text-2xl font-body font-semibold stat-shimmer">
-                    {card.value}
-                  </span>
-                  <span className="text-cream-40 text-xs font-body">
-                    {card.unit}
-                  </span>
-                </div>
-                {"usdValue" in card && card.usdValue ? (
-                  <div className="text-cream-20 text-xs font-body mt-1">
-                    {card.usdValue}
-                  </div>
-                ) : (
-                  <div className="text-cream-20 text-xs font-body mt-1">
-                    {card.sublabel}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
+
+      {/* Run rate section — clearly labeled as projection, NOT realized */}
+      {rates && observed && observed.epochCount > 0 && (
+        <div className="mt-6">
+          <h3 className="text-cream-40 text-[11px] font-body uppercase tracking-[0.12em] mb-3 flex items-center gap-2">
+            <TrendingUp className="w-3 h-3" />
+            Commission Run Rate
+            <span className="text-cream-20 text-[10px] normal-case tracking-normal font-light">
+              (extrapolated from observed average — not realized)
+            </span>
+          </h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-cream-5 border border-cream-8 rounded-xl p-4">
+              <div className="text-cream-40 text-xs font-body uppercase tracking-wider mb-2">
+                Per Day
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-cream text-xl font-body font-semibold">
+                  {formatMon(rates.commissionPerDayMon)}
+                </span>
+                <span className="text-cream-40 text-xs">MON</span>
+              </div>
+              <div className="text-cream-20 text-xs font-body mt-1">
+                {formatUsd(rates.commissionPerDayUsd)}
+              </div>
+            </div>
+            <div className="bg-cream-5 border border-cream-8 rounded-xl p-4">
+              <div className="text-cream-40 text-xs font-body uppercase tracking-wider mb-2">
+                Per Month
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-cream text-xl font-body font-semibold">
+                  {formatMon(rates.commissionPerMonthMon)}
+                </span>
+                <span className="text-cream-40 text-xs">MON</span>
+              </div>
+              <div className="text-cream-20 text-xs font-body mt-1">
+                {formatUsd(rates.commissionPerMonthUsd)}
+              </div>
+            </div>
+            <div className="bg-cream-5 border border-cream-8 rounded-xl p-4">
+              <div className="text-cream-40 text-xs font-body uppercase tracking-wider mb-2">
+                Per Year
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-cream text-xl font-body font-semibold">
+                  {formatMon(rates.commissionPerYearMon)}
+                </span>
+                <span className="text-cream-40 text-xs">MON</span>
+              </div>
+              <div className="text-cream-20 text-xs font-body mt-1">
+                {formatUsd(rates.commissionPerYearUsd)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
