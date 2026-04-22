@@ -75,13 +75,15 @@ export async function GET(
       poolRewardsMon: number;
       commissionMon: number;
       delegatorRewardsMon: number;
-      selfStakeRewardsMon: number; // validator's share of delegator pool from their own stake
-      validatorTotalMon: number;   // commission + self-stake share = true company income
+      selfStakeRewardsMon: number;
+      priorityFeesMon: number | null;
+      validatorTotalMon: number;
       poolRewardsUsd: number;
       commissionUsd: number;
+      priorityFeesUsd: number | null;
       validatorTotalUsd: number;
       stakeMon: number;
-      selfStakeMon: number | null; // null when we don't have self-stake data for this epoch
+      selfStakeMon: number | null;
       commissionPct: number;
       monPriceUsd: number;
       timestamp: string;
@@ -90,9 +92,11 @@ export async function GET(
     let totalPoolRewards = 0;
     let totalCommission = 0;
     let totalSelfStakeRewards = 0;
+    let totalPriorityFees = 0;
     let totalValidatorIncome = 0;
     let totalEpochSpan = 0;
     let hasSelfStakeData = false;
+    let hasPriorityFeeData = false;
 
     for (let i = 1; i < chronological.length; i++) {
       const prev = chronological[i - 1];
@@ -138,7 +142,28 @@ export async function GET(
         }
       }
 
-      const validatorTotalMon = commissionMon + selfStakeRewardsMon;
+      // Priority fees: proxied by authAddress native MON balance delta across
+      // snapshots. Priority fees land directly in the block producer's
+      // authAddress. We only count monotonic increases — any balance decrease
+      // means the validator spent (claimed elsewhere, paid gas, withdrew). This
+      // gives a conservative LOWER BOUND on priority fees earned. It will miss
+      // fees that were immediately withdrawn, so treat as a floor.
+      let priorityFeesMon: number | null = null;
+      if (prev.authBalanceWei != null && curr.authBalanceWei != null) {
+        hasPriorityFeeData = true;
+        const prevBal = BigInt(prev.authBalanceWei);
+        const currBal = BigInt(curr.authBalanceWei);
+        if (currBal > prevBal) {
+          const deltaWei = currBal - prevBal;
+          priorityFeesMon =
+            Number(deltaWei / WEI) + Number(deltaWei % WEI) / Number(WEI);
+        } else {
+          priorityFeesMon = 0;
+        }
+      }
+
+      const validatorTotalMon =
+        commissionMon + selfStakeRewardsMon + (priorityFeesMon ?? 0);
 
       const monPrice = priceMap.get(curr.epoch) || 0;
       const epochSpan = curr.epoch - prev.epoch;
@@ -146,6 +171,7 @@ export async function GET(
       totalPoolRewards += poolRewardsMon;
       totalCommission += commissionMon;
       totalSelfStakeRewards += selfStakeRewardsMon;
+      if (priorityFeesMon != null) totalPriorityFees += priorityFeesMon;
       totalValidatorIncome += validatorTotalMon;
       totalEpochSpan += epochSpan;
 
@@ -156,9 +182,12 @@ export async function GET(
         commissionMon,
         delegatorRewardsMon,
         selfStakeRewardsMon,
+        priorityFeesMon,
         validatorTotalMon,
         poolRewardsUsd: poolRewardsMon * monPrice,
         commissionUsd: commissionMon * monPrice,
+        priorityFeesUsd:
+          priorityFeesMon != null ? priorityFeesMon * monPrice : null,
         validatorTotalUsd: validatorTotalMon * monPrice,
         stakeMon,
         selfStakeMon,
@@ -178,6 +207,8 @@ export async function GET(
       totalEpochSpan > 0 ? totalCommission / totalEpochSpan : 0;
     const avgSelfStakePerEpoch =
       totalEpochSpan > 0 ? totalSelfStakeRewards / totalEpochSpan : 0;
+    const avgPriorityFeesPerEpoch =
+      totalEpochSpan > 0 ? totalPriorityFees / totalEpochSpan : 0;
     const avgValidatorPerEpoch =
       totalEpochSpan > 0 ? totalValidatorIncome / totalEpochSpan : 0;
 
@@ -188,6 +219,10 @@ export async function GET(
     const totalPoolUsd = incomeHistory.reduce((s, e) => s + e.poolRewardsUsd, 0);
     const totalCommissionUsd = incomeHistory.reduce((s, e) => s + e.commissionUsd, 0);
     const totalValidatorUsd = incomeHistory.reduce((s, e) => s + e.validatorTotalUsd, 0);
+    const totalPriorityFeesUsd = incomeHistory.reduce(
+      (s, e) => s + (e.priorityFeesUsd ?? 0),
+      0
+    );
 
     // Latest self-stake (for headline display)
     const latestSnap = chronological[chronological.length - 1];
@@ -215,6 +250,8 @@ export async function GET(
           // of the delegator pool earned on their own self-stake.
           // Null when we don't have self-stake data yet (historical rows).
           selfStakeRewardsMon: hasSelfStakeData ? totalSelfStakeRewards : null,
+          priorityFeesMon: hasPriorityFeeData ? totalPriorityFees : null,
+          priorityFeesUsd: hasPriorityFeeData ? totalPriorityFeesUsd : null,
           validatorTotalMon: hasSelfStakeData ? totalValidatorIncome : null,
           validatorTotalUsd: hasSelfStakeData ? totalValidatorUsd : null,
           currentSelfStakeMon,
@@ -246,8 +283,19 @@ export async function GET(
           validatorPerMonthUsd: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_DAY * 30 * latestPrice : null,
           validatorPerYearUsd: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_YEAR * latestPrice : null,
           avgSelfStakePerEpochMon: hasSelfStakeData ? avgSelfStakePerEpoch : null,
+          // Priority-fee rates — proxied via authAddress balance delta.
+          // Conservative lower bound since spends (claims, withdrawals) reset
+          // the delta to zero in that pair.
+          priorityFeesPerEpochMon: hasPriorityFeeData ? avgPriorityFeesPerEpoch : null,
+          priorityFeesPerDayMon: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY : null,
+          priorityFeesPerMonthMon: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY * 30 : null,
+          priorityFeesPerYearMon: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_YEAR : null,
+          priorityFeesPerDayUsd: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY * latestPrice : null,
+          priorityFeesPerMonthUsd: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY * 30 * latestPrice : null,
+          priorityFeesPerYearUsd: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_YEAR * latestPrice : null,
         },
         hasSelfStakeData,
+        hasPriorityFeeData,
         latestMonPriceUsd: latestPrice,
       },
     });

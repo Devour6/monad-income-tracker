@@ -469,9 +469,43 @@ curl ${BASE_URL}/api/validators/200/income?epochs=30`}
           <div className="bg-cream-5 border border-cream-8 rounded-xl p-5">
             <ul className="text-cream-60 text-sm font-body space-y-2 leading-relaxed">
               <li>
-                <strong className="text-cream">Rate limits:</strong> inherited
-                from Vercel (no per-user quota on hobby plan). Please be
-                reasonable — this is a free public service.
+                <strong className="text-cream">Anonymous:</strong> 60 requests
+                per minute per IP. Fine for light integration and one-off
+                queries.
+              </li>
+              <li>
+                <strong className="text-cream">With API key:</strong> 600
+                requests per minute. Send your key as{" "}
+                <code className="font-mono text-cream bg-cream-8 px-1.5 py-0.5 rounded text-xs">
+                  X-API-Key: your-key
+                </code>
+                . Email{" "}
+                <a
+                  href="mailto:hello@phaselabs.io"
+                  className="text-phase-green hover:underline"
+                >
+                  hello@phaselabs.io
+                </a>{" "}
+                for a key.
+              </li>
+              <li>
+                <strong className="text-cream">Headers on every response:</strong>{" "}
+                <code className="font-mono text-cream bg-cream-8 px-1.5 py-0.5 rounded text-xs">
+                  X-RateLimit-Limit
+                </code>
+                ,{" "}
+                <code className="font-mono text-cream bg-cream-8 px-1.5 py-0.5 rounded text-xs">
+                  X-RateLimit-Remaining
+                </code>
+                ,{" "}
+                <code className="font-mono text-cream bg-cream-8 px-1.5 py-0.5 rounded text-xs">
+                  X-RateLimit-Reset
+                </code>
+                . 429 responses include{" "}
+                <code className="font-mono text-cream bg-cream-8 px-1.5 py-0.5 rounded text-xs">
+                  Retry-After
+                </code>
+                .
               </li>
               <li>
                 <strong className="text-cream">Snapshot cadence:</strong> daily
