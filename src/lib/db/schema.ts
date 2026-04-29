@@ -88,7 +88,79 @@ export const networkEpochs = pgTable("network_epochs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/**
+ * Per-epoch priority-fee aggregate, sourced from block-by-block indexing.
+ * Keyed by (epoch, minerAddress) — Monad's `block.miner` field is what
+ * physically produces blocks and may be a contract OR EOA. For some
+ * validators it equals their staking-precompile authAddress; for others
+ * it's a separate account (often a distributor contract). We store the
+ * raw miner address and resolve to validator_id at query time via the
+ * `minerAliases` mapping below.
+ *
+ * priorityFeesWei = sum over every block produced by miner in epoch:
+ *   sum over every tx in block of:
+ *     gasUsed * (effectiveGasPrice - baseFeePerGas)
+ *
+ * Tx 0 is filtered (system distribution tx with gasUsed=0).
+ */
+export const epochPriorityFees = pgTable(
+  "epoch_priority_fees",
+  {
+    id: serial("id").primaryKey(),
+    epoch: integer("epoch").notNull(),
+    /** Lowercased 0x-prefixed block miner address */
+    minerAddress: text("miner_address").notNull(),
+    /** Sum of priority fees in wei (uint256 as text) */
+    priorityFeesWei: text("priority_fees_wei").notNull(),
+    /** Number of blocks this miner proposed in this epoch */
+    blocksProposed: integer("blocks_proposed").notNull().default(0),
+    /** Lowest block we've counted for this row (inclusive) */
+    firstBlock: bigint("first_block", { mode: "bigint" }),
+    /** Highest block we've counted for this row (inclusive) */
+    lastBlock: bigint("last_block", { mode: "bigint" }),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("epoch_miner_pf_idx").on(table.epoch, table.minerAddress),
+  ]
+);
+
+/**
+ * Maps a block-producer address (from `block.miner`) to a validator_id
+ * in our staking-precompile namespace. Some validators produce blocks
+ * directly under their authAddress; others use a separate EOA or a
+ * distributor contract. This table is the single source of truth.
+ *
+ * Auto-populated by the indexer when `miner == authAddress`. Manually
+ * seeded for distributor-contract cases via `/api/admin/map-miner`.
+ */
+export const minerAliases = pgTable("miner_aliases", {
+  id: serial("id").primaryKey(),
+  /** Lowercased 0x-prefixed block miner address (unique) */
+  minerAddress: text("miner_address").notNull().unique(),
+  validatorId: integer("validator_id").notNull(),
+  /** 'auth' = miner==authAddress; 'manual' = operator-provided mapping */
+  source: text("source").notNull().default("auto"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Indexer cursor — single-row table tracking how far the block indexer has
+ * advanced. The next run resumes from `lastBlock + 1`.
+ */
+export const indexerState = pgTable("indexer_state", {
+  id: serial("id").primaryKey(),
+  /** Highest block we've fully processed */
+  lastBlock: bigint("last_block", { mode: "bigint" }).notNull(),
+  /** Highest epoch we've seen any block of */
+  lastEpoch: integer("last_epoch"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export type EpochSnapshot = typeof epochSnapshots.$inferSelect;
 export type NewEpochSnapshot = typeof epochSnapshots.$inferInsert;
 export type Validator = typeof validators.$inferSelect;
 export type NetworkEpoch = typeof networkEpochs.$inferSelect;
+export type EpochPriorityFees = typeof epochPriorityFees.$inferSelect;
+export type IndexerState = typeof indexerState.$inferSelect;
+export type MinerAlias = typeof minerAliases.$inferSelect;
