@@ -106,6 +106,53 @@ export async function GET(
       });
     }
 
+    // Network-wide block totals per epoch — needed to compute production
+    // efficiency = actualBlocks / expectedBlocks where expected is the
+    // validator's stake share × epoch total. Only includes epochs the indexer
+    // has touched, so missing entries fall back to "no efficiency data".
+    const networkBlockRows = (await db
+      .select({
+        epoch: epochPriorityFees.epoch,
+        totalBlocks: sql<number>`SUM(${epochPriorityFees.blocksProposed})`,
+      })
+      .from(epochPriorityFees)
+      .where(
+        sql`${epochPriorityFees.epoch} IN ${
+          epochIds.length > 0 ? epochIds : [0]
+        }`
+      )
+      .groupBy(epochPriorityFees.epoch)) as unknown as {
+      epoch: number;
+      totalBlocks: number;
+    }[];
+    const networkBlocksByEpoch = new Map<number, number>();
+    for (const r of networkBlockRows) {
+      networkBlocksByEpoch.set(r.epoch, Number(r.totalBlocks || 0));
+    }
+
+    // Total network stake at each epoch — sum of stake_wei across all
+    // snapshots for that epoch. Pre-fetch so we can compute efficiency
+    // without N+1 queries.
+    const networkStakeRows = (await db
+      .select({
+        epoch: epochSnapshots.epoch,
+        totalStakeWei: sql<string>`SUM(CAST(${epochSnapshots.stakeWei} AS NUMERIC))::TEXT`,
+      })
+      .from(epochSnapshots)
+      .where(
+        sql`${epochSnapshots.epoch} IN ${
+          epochIds.length > 0 ? epochIds : [0]
+        }`
+      )
+      .groupBy(epochSnapshots.epoch)) as unknown as {
+      epoch: number;
+      totalStakeWei: string;
+    }[];
+    const networkStakeByEpoch = new Map<number, bigint>();
+    for (const r of networkStakeRows) {
+      networkStakeByEpoch.set(r.epoch, BigInt(r.totalStakeWei || "0"));
+    }
+
     const chronological = [...snapshots].reverse();
 
     const incomeHistory: Array<{
@@ -117,6 +164,12 @@ export async function GET(
       selfStakeRewardsMon: number;
       priorityFeesMon: number | null;
       priorityFeeBlocks: number;
+      // Production efficiency = actualBlocks / expectedBlocks where
+      // expectedBlocks = epochTotalBlocks × (validatorStake / networkStake).
+      // 1.00 = perfect proportional production, > 1 = overperforming, < 1 =
+      // underperforming. Null when the indexer hasn't covered this epoch.
+      productionEfficiency: number | null;
+      expectedBlocks: number | null;
       validatorTotalMon: number;
       poolRewardsUsd: number;
       commissionUsd: number;
@@ -137,6 +190,9 @@ export async function GET(
     let totalEpochSpan = 0;
     let hasSelfStakeData = false;
     let hasPriorityFeeData = false;
+    let totalActualBlocks = 0;
+    let totalExpectedBlocks = 0;
+    let hasProductionData = false;
 
     for (let i = 1; i < chronological.length; i++) {
       const prev = chronological[i - 1];
@@ -204,6 +260,31 @@ export async function GET(
       const validatorTotalMon =
         commissionMon + selfStakeRewardsMon + (priorityFeesMon ?? 0);
 
+      // Production efficiency — only meaningful when we have indexer
+      // coverage AND the validator has stake at this epoch.
+      let productionEfficiency: number | null = null;
+      let expectedBlocks: number | null = null;
+      const epochTotalBlocks = networkBlocksByEpoch.get(curr.epoch);
+      const epochTotalStakeWei = networkStakeByEpoch.get(curr.epoch);
+      if (
+        epochTotalBlocks &&
+        epochTotalStakeWei &&
+        epochTotalStakeWei > BigInt(0) &&
+        prevStakeWei > BigInt(0)
+      ) {
+        const RATIO_SCALE = BigInt(10) ** BigInt(18);
+        const shareScaled =
+          (prevStakeWei * RATIO_SCALE) / epochTotalStakeWei;
+        const stakeShare = Number(shareScaled) / Number(RATIO_SCALE);
+        expectedBlocks = epochTotalBlocks * stakeShare;
+        if (expectedBlocks > 0) {
+          productionEfficiency = priorityFeeBlocks / expectedBlocks;
+          hasProductionData = true;
+          totalActualBlocks += priorityFeeBlocks;
+          totalExpectedBlocks += expectedBlocks;
+        }
+      }
+
       const monPrice = priceMap.get(curr.epoch) || 0;
       const epochSpan = curr.epoch - prev.epoch;
 
@@ -223,6 +304,8 @@ export async function GET(
         selfStakeRewardsMon,
         priorityFeesMon,
         priorityFeeBlocks,
+        productionEfficiency,
+        expectedBlocks,
         validatorTotalMon,
         poolRewardsUsd: poolRewardsMon * monPrice,
         commissionUsd: commissionMon * monPrice,
@@ -297,6 +380,14 @@ export async function GET(
           currentSelfStakeMon,
           firstEpoch: incomeHistory[0]?.epoch ?? null,
           lastEpoch: incomeHistory[incomeHistory.length - 1]?.epoch ?? null,
+          // Block production efficiency over the observed window.
+          // 1.0 = exactly proportional to stake, > 1 over, < 1 under.
+          actualBlocks: hasProductionData ? totalActualBlocks : null,
+          expectedBlocks: hasProductionData ? totalExpectedBlocks : null,
+          productionEfficiency:
+            hasProductionData && totalExpectedBlocks > 0
+              ? totalActualBlocks / totalExpectedBlocks
+              : null,
         },
         rates: {
           commissionPerEpochMon: avgCommissionPerEpoch,
@@ -323,9 +414,10 @@ export async function GET(
           validatorPerMonthUsd: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_DAY * 30 * latestPrice : null,
           validatorPerYearUsd: hasSelfStakeData ? avgValidatorPerEpoch * EPOCHS_PER_YEAR * latestPrice : null,
           avgSelfStakePerEpochMon: hasSelfStakeData ? avgSelfStakePerEpoch : null,
-          // Priority-fee rates — proxied via authAddress balance delta.
-          // Conservative lower bound since spends (claims, withdrawals) reset
-          // the delta to zero in that pair.
+          // Priority-fee rates — REAL per-block fees from the indexer
+          // (sum_tx(gasUsed × (effGasPrice − baseFee))) attributed to the
+          // validator via miner_aliases. Null when indexer hasn't indexed
+          // the relevant epochs yet.
           priorityFeesPerEpochMon: hasPriorityFeeData ? avgPriorityFeesPerEpoch : null,
           priorityFeesPerDayMon: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY : null,
           priorityFeesPerMonthMon: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY * 30 : null,
@@ -336,6 +428,7 @@ export async function GET(
         },
         hasSelfStakeData,
         hasPriorityFeeData,
+        hasProductionData,
         latestMonPriceUsd: latestPrice,
       },
     });

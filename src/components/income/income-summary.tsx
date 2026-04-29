@@ -1,6 +1,6 @@
 "use client";
 
-import { Wallet, Users, TrendingUp, Clock, Zap } from "lucide-react";
+import { Wallet, Users, TrendingUp, Clock, Zap, Activity } from "lucide-react";
 
 interface IncomeSummary {
   observed: {
@@ -20,6 +20,9 @@ interface IncomeSummary {
     currentSelfStakeMon?: number | null;
     firstEpoch: number | null;
     lastEpoch: number | null;
+    actualBlocks?: number | null;
+    expectedBlocks?: number | null;
+    productionEfficiency?: number | null;
   };
   rates: {
     commissionPerEpochMon: number;
@@ -47,6 +50,7 @@ interface IncomeSummary {
   };
   hasPriorityFeeData?: boolean;
   hasSelfStakeData?: boolean;
+  hasProductionData?: boolean;
   latestMonPriceUsd: number;
 }
 
@@ -155,17 +159,30 @@ export function IncomeSummary({
         : "Indexer warming up — coming soon",
       highlight: false,
     },
-    {
-      label: "Observation Window",
-      value: observed ? `${observed.epochCount}` : null,
-      usdValue: null,
-      unit: "epochs",
-      icon: Clock,
-      sublabel: observed
-        ? `${formatDays(observed.daysObserved)} • ${observed.snapshotCount} snapshots`
-        : "",
-      highlight: false,
-    },
+    summary?.hasProductionData &&
+    observed?.productionEfficiency != null &&
+    observed.actualBlocks != null &&
+    observed.expectedBlocks != null
+      ? {
+          label: "Block Production",
+          value: observed.productionEfficiency.toFixed(2),
+          usdValue: null,
+          unit: "× expected",
+          icon: Activity,
+          sublabel: `${observed.actualBlocks} actual / ${observed.expectedBlocks.toFixed(0)} expected by stake share`,
+          highlight: false,
+        }
+      : {
+          label: "Observation Window",
+          value: observed ? `${observed.epochCount}` : null,
+          usdValue: null,
+          unit: "epochs",
+          icon: Clock,
+          sublabel: observed
+            ? `${formatDays(observed.daysObserved)} • ${observed.snapshotCount} snapshots`
+            : "",
+          highlight: false,
+        },
   ];
 
   return (
