@@ -336,21 +336,60 @@ curl ${BASE_URL}/api/validators/200/income?epochs=30`}
                 is actual on-chain earnings, not a projection.
               </li>
               <li>
-                <strong className="text-cream">Three income streams:</strong>
+                <strong className="text-cream">Validator income streams (sourced from on-chain data, not estimates):</strong>
                 <div className="mt-2 ml-4 space-y-1 text-xs">
                   <div>
                     <span className="text-phase-green font-mono">commissionMon</span>
-                    {" "}— what the validator company earns (commission% × pool)
+                    {" "}— commission take = pool rewards × commission rate.
+                    Sourced from staking-precompile accumulator deltas.
                   </div>
                   <div>
+                    <span className="text-blue-300 font-mono">selfStakeRewardsMon</span>
+                    {" "}— validator&apos;s share of the delegator pool earned on
+                    their own self-delegation. Self-stake fetched from{" "}
+                    <code className="text-cream-60">getDelegator(validatorId, authAddress)</code>.
+                  </div>
+                  <div>
+                    <span className="text-orange-300 font-mono">priorityFeesMon</span>
+                    {" "}— REAL block-level priority fees: for every block produced
+                    by the validator&apos;s miner address(es), summed{" "}
+                    <code className="text-cream-60">gasUsed × (effectiveGasPrice − baseFee)</code>{" "}
+                    over all non-system txs. Indexed continuously every ~5 min
+                    via <code className="text-cream-60">eth_getBlockReceipts</code>.
+                  </div>
+                  <div>
+                    <span className="text-phase-green font-mono">validatorTotalMon</span>
+                    {" "}— commission + self-stake share + priority fees. The
+                    headline number for what the validator company actually earns.
+                  </div>
+                  <div className="mt-2">
                     <span className="text-cream-60 font-mono">poolRewardsMon</span>
                     {" "}— total rewards the stake pool earned (self + delegators)
                   </div>
                   <div>
                     <span className="text-cream-60 font-mono">delegatorRewardsMon</span>
-                    {" "}— what delegators collectively received
+                    {" "}— what delegators collectively received (pool − commission)
                   </div>
                 </div>
+              </li>
+              <li>
+                <strong className="text-cream">Block-level indexer:</strong>
+                {" "}a separate continuous indexer walks Monad blocks forward,
+                attributing priority fees to validators by mapping{" "}
+                <code className="text-phase-green font-mono text-xs">block.miner</code>{" "}
+                to a validator ID via{" "}
+                <code className="text-phase-green font-mono text-xs">miner_aliases</code>.
+                Direct authAddress producers map automatically; distributor
+                contracts resolve via storage slot 0 (which holds the validator&apos;s
+                authAddress in the lower 20 bytes — verified across the Monad
+                validator set). Coverage runs at ~85% on first sweep and
+                improves as new aliases are auto-discovered.
+              </li>
+              <li>
+                <strong className="text-cream">Only completed epochs are reported.</strong>
+                {" "}The snapshot cron skips delay periods (validator-set transition).
+                Income is only computed once two consecutive snapshots exist —
+                we never report income that hasn&apos;t been received on-chain.
               </li>
               <li>
                 <strong className="text-cream">Rates vs realized:</strong>
