@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { epochSnapshots, networkEpochs } from "@/lib/db/schema";
-import { eq, desc, inArray } from "drizzle-orm";
+import {
+  epochSnapshots,
+  networkEpochs,
+  epochPriorityFees,
+  minerAliases,
+} from "@/lib/db/schema";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 import { calculateEpochReward } from "@/lib/monad-rpc";
 
 /**
@@ -67,6 +72,40 @@ export async function GET(
       priceMap.set(n.epoch, Number(n.monPriceUsd) || 0);
     }
 
+    // Real priority-fee data sourced from the block-level indexer.
+    // Sums across every miner_address mapped to this validator_id, grouped
+    // by epoch. Returns wei sums; we convert to MON in the loop below.
+    const priorityFeeRows = (await db
+      .select({
+        epoch: epochPriorityFees.epoch,
+        feesWei: sql<string>`SUM(CAST(${epochPriorityFees.priorityFeesWei} AS NUMERIC))::TEXT`,
+        blocks: sql<number>`SUM(${epochPriorityFees.blocksProposed})`,
+      })
+      .from(epochPriorityFees)
+      .innerJoin(
+        minerAliases,
+        eq(minerAliases.minerAddress, epochPriorityFees.minerAddress)
+      )
+      .where(
+        sql`${minerAliases.validatorId} = ${validatorId} AND ${epochPriorityFees.epoch} IN ${epochIds.length > 0 ? epochIds : [0]}`
+      )
+      .groupBy(epochPriorityFees.epoch)) as unknown as {
+      epoch: number;
+      feesWei: string;
+      blocks: number;
+    }[];
+
+    const priorityFeesByEpoch = new Map<
+      number,
+      { feesWei: bigint; blocks: number }
+    >();
+    for (const r of priorityFeeRows) {
+      priorityFeesByEpoch.set(r.epoch, {
+        feesWei: BigInt(r.feesWei || "0"),
+        blocks: Number(r.blocks || 0),
+      });
+    }
+
     const chronological = [...snapshots].reverse();
 
     const incomeHistory: Array<{
@@ -77,6 +116,7 @@ export async function GET(
       delegatorRewardsMon: number;
       selfStakeRewardsMon: number;
       priorityFeesMon: number | null;
+      priorityFeeBlocks: number;
       validatorTotalMon: number;
       poolRewardsUsd: number;
       commissionUsd: number;
@@ -142,24 +182,23 @@ export async function GET(
         }
       }
 
-      // Priority fees: proxied by authAddress native MON balance delta across
-      // snapshots. Priority fees land directly in the block producer's
-      // authAddress. We only count monotonic increases — any balance decrease
-      // means the validator spent (claimed elsewhere, paid gas, withdrew). This
-      // gives a conservative LOWER BOUND on priority fees earned. It will miss
-      // fees that were immediately withdrawn, so treat as a floor.
+      // Priority fees: REAL block-level data from epoch_priority_fees,
+      // computed as sum over every block produced by this validator's
+      // miner_address(es) of:
+      //   sum_tx( gasUsed × (effectiveGasPrice − baseFeePerGas) )
+      //
+      // Attributed to the curr.epoch — that's the epoch in which the
+      // blocks were proposed and fees received. Returns null when the
+      // indexer hasn't covered this epoch yet (in-progress or pre-indexer
+      // history).
       let priorityFeesMon: number | null = null;
-      if (prev.authBalanceWei != null && curr.authBalanceWei != null) {
+      let priorityFeeBlocks = 0;
+      const pf = priorityFeesByEpoch.get(curr.epoch);
+      if (pf && pf.blocks > 0) {
         hasPriorityFeeData = true;
-        const prevBal = BigInt(prev.authBalanceWei);
-        const currBal = BigInt(curr.authBalanceWei);
-        if (currBal > prevBal) {
-          const deltaWei = currBal - prevBal;
-          priorityFeesMon =
-            Number(deltaWei / WEI) + Number(deltaWei % WEI) / Number(WEI);
-        } else {
-          priorityFeesMon = 0;
-        }
+        priorityFeesMon =
+          Number(pf.feesWei / WEI) + Number(pf.feesWei % WEI) / Number(WEI);
+        priorityFeeBlocks = pf.blocks;
       }
 
       const validatorTotalMon =
@@ -183,6 +222,7 @@ export async function GET(
         delegatorRewardsMon,
         selfStakeRewardsMon,
         priorityFeesMon,
+        priorityFeeBlocks,
         validatorTotalMon,
         poolRewardsUsd: poolRewardsMon * monPrice,
         commissionUsd: commissionMon * monPrice,

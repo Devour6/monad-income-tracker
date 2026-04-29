@@ -8,7 +8,6 @@ import {
   getMonPrice,
   calculateEpochReward,
   getSelfStakes,
-  getAuthBalances,
 } from "@/lib/monad-rpc";
 import { eq, sql, desc } from "drizzle-orm";
 import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
@@ -78,31 +77,21 @@ export async function GET(request: Request) {
     //    per validator against getDelegator(validatorId, authAddress) — the
     //    staking precompile doesn't expose self-stake on getValidator so we
     //    have to query the validator's own delegation entry directly).
-    const [monPrice, nameRegistry, selfStakeMap, authBalanceMap] =
-      await Promise.all([
-        getMonPrice(),
-        fetchFreshRegistry().catch(() => VALIDATOR_NAMES),
-        getSelfStakes(
-          validatorData.map((v) => ({
-            validatorId: v.validatorId,
-            authAddress: v.authAddress,
-          }))
-        ).catch((err) => {
-          console.log("[snapshot] getSelfStakes failed:", err);
-          return new Map<number, bigint>();
-        }),
-        getAuthBalances(validatorData.map((v) => v.authAddress)).catch(
-          (err) => {
-            console.log("[snapshot] getAuthBalances failed:", err);
-            return new Map<string, bigint>();
-          }
-        ),
-      ]);
+    const [monPrice, nameRegistry, selfStakeMap] = await Promise.all([
+      getMonPrice(),
+      fetchFreshRegistry().catch(() => VALIDATOR_NAMES),
+      getSelfStakes(
+        validatorData.map((v) => ({
+          validatorId: v.validatorId,
+          authAddress: v.authAddress,
+        }))
+      ).catch((err) => {
+        console.log("[snapshot] getSelfStakes failed:", err);
+        return new Map<number, bigint>();
+      }),
+    ]);
     console.log(
       `[snapshot] Fetched self-stake for ${selfStakeMap.size}/${validatorData.length} validators`
-    );
-    console.log(
-      `[snapshot] Fetched auth balance for ${authBalanceMap.size}/${validatorData.length} validators`
     );
 
     // 6. Get the most recent previous epoch's snapshots for delta computation
@@ -159,8 +148,6 @@ export async function GET(request: Request) {
       }
 
       const selfStakeWei = selfStakeMap.get(v.validatorId);
-      const authBalanceWei = authBalanceMap.get(v.authAddress.toLowerCase())
-        ?? authBalanceMap.get(v.authAddress);
 
       snapshotRows.push({
         epoch,
@@ -170,8 +157,6 @@ export async function GET(request: Request) {
         commission: v.commission.toString(),
         unclaimedRewards: v.unclaimedRewards.toString(),
         selfStakeWei: selfStakeWei != null ? selfStakeWei.toString() : null,
-        authBalanceWei:
-          authBalanceWei != null ? authBalanceWei.toString() : null,
         blockRewardsMon,
         commissionMon,
       });

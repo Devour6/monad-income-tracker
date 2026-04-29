@@ -70,58 +70,6 @@ async function ethCall(data: string, timeoutMs = 10000): Promise<string> {
   }
 }
 
-/** Generic JSON-RPC call (for eth_getBalance etc.) */
-async function rpcCall(
-  method: string,
-  params: unknown[],
-  timeoutMs = 10000
-): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(MONAD_RPC, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
-      signal: controller.signal,
-    });
-    const json = await res.json();
-    if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
-    return json.result;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/**
- * Fetch authAddress native MON balances in parallel.
- * Used to track priority-fee income (priority fees land in the producer's
- * authAddress; balance deltas across epochs approximate priority fee earnings
- * net of claims/withdrawals).
- */
-export async function getAuthBalances(
-  addresses: string[]
-): Promise<Map<string, bigint>> {
-  const result = new Map<string, bigint>();
-  const CONCURRENCY = 10;
-  for (let i = 0; i < addresses.length; i += CONCURRENCY) {
-    const chunk = addresses.slice(i, i + CONCURRENCY);
-    const settled = await Promise.allSettled(
-      chunk.map(async (addr) => {
-        const hex = (await rpcCall("eth_getBalance", [addr, "latest"])) as string;
-        return { addr, wei: BigInt(hex) };
-      })
-    );
-    for (const s of settled) {
-      if (s.status === "fulfilled") result.set(s.value.addr, s.value.wei);
-    }
-    if (i + CONCURRENCY < addresses.length) {
-      await new Promise((r) => setTimeout(r, 300));
-    }
-  }
-  return result;
-}
-
 /**
  * Batch fetch multiple eth_call results.
  * Monad RPC doesn't support JSON-RPC batch arrays, so we use

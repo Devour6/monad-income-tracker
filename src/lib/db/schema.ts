@@ -31,11 +31,6 @@ export const epochSnapshots = pgTable(
     /** Validator's own self-delegation stake in wei (uint256 as text). Nullable
      *  because historical rows predating self-stake tracking won't have it. */
     selfStakeWei: text("self_stake_wei"),
-    /** Validator auth-address native MON balance at snapshot time (uint256).
-     *  Used to approximate priority-fee income — priority fees land directly
-     *  in the block producer's authAddress, so monotonic increases between
-     *  snapshots approximate priority fees earned (net of any outgoing txs). */
-    authBalanceWei: text("auth_balance_wei"),
     /** Block reward income this epoch in MON (computed from accumulator delta) */
     blockRewardsMon: numeric("block_rewards_mon", {
       precision: 30,
