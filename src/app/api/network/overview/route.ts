@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { validators, epochSnapshots, networkEpochs } from "@/lib/db/schema";
+import {
+  validators,
+  epochSnapshots,
+  networkEpochs,
+  epochPriorityFees,
+} from "@/lib/db/schema";
 import { desc, sql, eq } from "drizzle-orm";
 import { EPOCHS_PER_YEAR } from "@/lib/apy";
 import { calculateEpochReward } from "@/lib/monad-rpc";
@@ -116,12 +121,43 @@ export async function GET() {
 
     const totalStakeMon = Number(aggStats.totalStakeMon) || 0;
 
+    // 6. Network-wide priority fees from the block indexer for the current
+    //    epoch span. Reported as an aggregate so callers can see network
+    //    MEV throughput. Returns null if the indexer hasn't covered these
+    //    epochs yet (still warming up / backfilling).
+    const [feeAgg] = (await db
+      .select({
+        feesWei: sql<string>`COALESCE(SUM(CAST(${epochPriorityFees.priorityFeesWei} AS NUMERIC)), 0)::TEXT`,
+        blocks: sql<number>`COALESCE(SUM(${epochPriorityFees.blocksProposed}), 0)::int`,
+      })
+      .from(epochPriorityFees)
+      .where(eq(epochPriorityFees.epoch, latestEpoch))) as unknown as Array<{
+      feesWei: string;
+      blocks: number;
+    }>;
+
+    let networkPriorityFeesMon: number | null = null;
+    let networkPriorityFeeBlocks = 0;
+    if (feeAgg && Number(feeAgg.blocks) > 0) {
+      const WEI = BigInt(10) ** BigInt(18);
+      const wei = BigInt(feeAgg.feesWei || "0");
+      networkPriorityFeesMon =
+        Number(wei / WEI) + Number(wei % WEI) / Number(WEI);
+      networkPriorityFeeBlocks = Number(feeAgg.blocks);
+    }
+
     const response = NextResponse.json({
       totalStakeMon,
       totalStakeUsd: totalStakeMon * monPriceUsd,
       activeValidators: aggStats.activeCount ?? 0,
       avgCommissionPct: Number(Number(aggStats.avgCommission).toFixed(2)),
       networkApy: Number(networkApy.toFixed(4)),
+      networkPriorityFeesMon,
+      networkPriorityFeesUsd:
+        networkPriorityFeesMon != null
+          ? networkPriorityFeesMon * monPriceUsd
+          : null,
+      networkPriorityFeeBlocks,
       monPriceUsd,
       latestEpoch,
       epochSpan,
