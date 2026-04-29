@@ -17,9 +17,16 @@ interface EpochIncome {
   poolRewardsMon: number;
   commissionMon: number;
   delegatorRewardsMon: number;
+  selfStakeRewardsMon?: number;
+  priorityFeesMon?: number | null;
+  priorityFeeBlocks?: number;
+  validatorTotalMon?: number;
   poolRewardsUsd: number;
   commissionUsd: number;
+  priorityFeesUsd?: number | null;
+  validatorTotalUsd?: number;
   stakeMon: number;
+  selfStakeMon?: number | null;
   commissionPct: number;
   monPriceUsd: number;
   timestamp: string;
@@ -61,6 +68,23 @@ function CustomTooltip({
           <span className="text-cream-20">(${d.commissionUsd.toFixed(2)})</span>
         )}
       </div>
+      {d.selfStakeRewardsMon != null && d.selfStakeRewardsMon > 0 && (
+        <div className="text-xs mb-0.5">
+          <span className="text-blue-300">
+            Self-stake share: {formatMon(d.selfStakeRewardsMon)} MON
+          </span>
+        </div>
+      )}
+      {d.priorityFeesMon != null && (
+        <div className="text-xs mb-0.5">
+          <span className="text-orange-300">
+            Priority fees: {formatMon(d.priorityFeesMon)} MON
+          </span>
+          {d.priorityFeeBlocks ? (
+            <span className="text-cream-20"> ({d.priorityFeeBlocks} blk)</span>
+          ) : null}
+        </div>
+      )}
       <div className="text-cream-40 text-xs">
         Pool: {formatMon(d.poolRewardsMon)} MON
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Wallet, Users, TrendingUp, Clock } from "lucide-react";
+import { Wallet, Users, TrendingUp, Clock, Zap } from "lucide-react";
 
 interface IncomeSummary {
   observed: {
@@ -12,6 +12,12 @@ interface IncomeSummary {
     commissionMon: number;
     commissionUsd: number;
     delegatorRewardsMon: number;
+    selfStakeRewardsMon?: number | null;
+    priorityFeesMon?: number | null;
+    priorityFeesUsd?: number | null;
+    validatorTotalMon?: number | null;
+    validatorTotalUsd?: number | null;
+    currentSelfStakeMon?: number | null;
     firstEpoch: number | null;
     lastEpoch: number | null;
   };
@@ -30,7 +36,17 @@ interface IncomeSummary {
     poolPerDayUsd: number;
     poolPerMonthUsd: number;
     poolPerYearUsd: number;
+    priorityFeesPerDayMon?: number | null;
+    priorityFeesPerMonthMon?: number | null;
+    priorityFeesPerYearMon?: number | null;
+    priorityFeesPerYearUsd?: number | null;
+    validatorPerDayMon?: number | null;
+    validatorPerMonthMon?: number | null;
+    validatorPerYearMon?: number | null;
+    validatorPerYearUsd?: number | null;
   };
+  hasPriorityFeeData?: boolean;
+  hasSelfStakeData?: boolean;
   latestMonPriceUsd: number;
 }
 
@@ -82,37 +98,61 @@ export function IncomeSummary({
   const observed = summary?.observed;
   const rates = summary?.rates;
 
-  // PRIMARY cards: REALIZED earnings in the observed window
+  // PRIMARY cards: REALIZED earnings in the observed window. The headline
+  // is the validator's TOTAL income (commission + self-stake share +
+  // priority fees), with the breakdown shown in the row below.
+  const totalCard =
+    observed && observed.validatorTotalMon != null
+      ? {
+          label: "Validator Total Income",
+          value: formatMon(observed.validatorTotalMon),
+          usdValue:
+            observed.validatorTotalUsd != null
+              ? formatUsd(observed.validatorTotalUsd)
+              : null,
+          unit: "MON",
+          icon: Wallet,
+          sublabel: `commission + self-stake + priority fees · ${formatDays(observed.daysObserved)}`,
+          highlight: true,
+        }
+      : {
+          label: "Validator Commission",
+          value: observed ? formatMon(observed.commissionMon) : null,
+          usdValue: observed ? formatUsd(observed.commissionUsd) : null,
+          unit: "MON",
+          icon: Wallet,
+          sublabel: observed
+            ? `Realized over ${formatDays(observed.daysObserved)}`
+            : "",
+          highlight: true,
+        };
+
   const realizedCards = [
+    totalCard,
     {
-      label: "Validator Commission",
+      label: "Commission",
       value: observed ? formatMon(observed.commissionMon) : null,
       usdValue: observed ? formatUsd(observed.commissionUsd) : null,
       unit: "MON",
-      icon: Wallet,
-      sublabel: observed
-        ? `Realized over ${formatDays(observed.daysObserved)}`
-        : "",
-      highlight: true,
-    },
-    {
-      label: "Pool Rewards",
-      value: observed ? formatMon(observed.poolRewardsMon) : null,
-      usdValue: observed ? formatUsd(observed.poolRewardsUsd) : null,
-      unit: "MON",
       icon: Users,
-      sublabel: observed
-        ? `Earned by all stake (self + delegators)`
-        : "",
+      sublabel: `${validator.commissionPct}% of pool rewards`,
       highlight: false,
     },
     {
-      label: "Delegator Share",
-      value: observed ? formatMon(observed.delegatorRewardsMon) : null,
-      usdValue: null,
+      label: "Priority Fees (MEV)",
+      value:
+        observed && observed.priorityFeesMon != null
+          ? formatMon(observed.priorityFeesMon)
+          : null,
+      usdValue:
+        observed && observed.priorityFeesUsd != null
+          ? formatUsd(observed.priorityFeesUsd)
+          : null,
       unit: "MON",
-      icon: Users,
-      sublabel: `Paid out to delegators (${validator.commissionPct}% commission)`,
+      icon: Zap,
+      sublabel: summary?.hasPriorityFeeData
+        ? "Indexed from block-level data"
+        : "Indexer warming up — coming soon",
       highlight: false,
     },
     {
