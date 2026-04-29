@@ -31,13 +31,20 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const maxBlocksParam = url.searchParams.get("max_blocks");
   const seedParam = url.searchParams.get("seed");
+  const fromParam = url.searchParams.get("from");
+  const toParam = url.searchParams.get("to");
   const maxBlocks = maxBlocksParam ? parseInt(maxBlocksParam, 10) : undefined;
   const seedBlock = seedParam ? BigInt(seedParam) : undefined;
+  const range =
+    fromParam && toParam
+      ? { from: BigInt(fromParam), to: BigInt(toParam) }
+      : undefined;
 
   try {
     const result = await runIndexer({
       maxBlocks: maxBlocks && maxBlocks > 0 ? maxBlocks : undefined,
       seedBlock,
+      range,
     });
     return NextResponse.json({
       ok: true,

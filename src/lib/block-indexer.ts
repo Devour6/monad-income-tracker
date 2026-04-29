@@ -301,22 +301,32 @@ export interface IndexerRunResult {
  *
  * Optional `seedBlock` lets the caller bootstrap (e.g. start from
  * `head - 50_000`) the very first time.
+ *
+ * `range` overrides the cursor entirely — the indexer walks the explicit
+ * [from, to] block range without touching the persisted cursor. Used for
+ * historical backfills (e.g. epochs older than the live cursor's start).
  */
 export async function runIndexer(opts: {
   seedBlock?: bigint;
   maxBlocks?: number;
+  range?: { from: bigint; to: bigint };
 } = {}): Promise<IndexerRunResult> {
   const t0 = Date.now();
   const head = await getLatestBlockNumber();
 
-  let cursor = await getCursor();
-  if (!cursor) {
-    const seed = opts.seedBlock ?? head - BigInt(50_000);
-    cursor = { lastBlock: seed };
+  let cursor: { lastBlock: bigint } | null;
+  if (opts.range) {
+    cursor = { lastBlock: opts.range.from - BigInt(1) };
+  } else {
+    cursor = await getCursor();
+    if (!cursor) {
+      const seed = opts.seedBlock ?? head - BigInt(50_000);
+      cursor = { lastBlock: seed };
+    }
   }
 
   const startBlock = cursor.lastBlock + BigInt(1);
-  if (startBlock > head) {
+  if (!opts.range && startBlock > head) {
     return {
       startBlock,
       endBlock: cursor.lastBlock,
@@ -334,10 +344,11 @@ export async function runIndexer(opts: {
   const agg = new Map<string, AggValue & AggKey>();
 
   let current = startBlock;
+  const upperLimit = opts.range ? opts.range.to : head;
   const targetEnd = opts.maxBlocks
     ? startBlock + BigInt(opts.maxBlocks) - BigInt(1)
-    : head;
-  const endBoundary = targetEnd < head ? targetEnd : head;
+    : upperLimit;
+  const endBoundary = targetEnd < upperLimit ? targetEnd : upperLimit;
 
   let blocksAttributed = 0;
   let totalFees = BigInt(0);
@@ -398,10 +409,11 @@ export async function runIndexer(opts: {
     current += BigInt(batchSize);
   }
 
-  // Flush + advance cursor
+  // Flush + advance cursor (cursor untouched in range mode — we don't want
+  // a backfill walk to clobber the realtime cursor).
   if (agg.size > 0) await flushAggregates(agg);
   const lastProcessed = current - BigInt(1);
-  if (lastProcessed >= startBlock) {
+  if (!opts.range && lastProcessed >= startBlock) {
     const lastEpoch = epochsTouched.size > 0 ? Math.max(...epochsTouched) : 0;
     await setCursor(lastProcessed, lastEpoch);
   }
