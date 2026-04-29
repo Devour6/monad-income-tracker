@@ -48,6 +48,12 @@ interface IncomeSummary {
     validatorPerYearMon?: number | null;
     validatorPerYearUsd?: number | null;
   };
+  apy?: {
+    poolApy: number | null;
+    delegatorApy: number | null;
+    validatorMevApy: number | null;
+    validatorTotalApy: number | null;
+  };
   hasPriorityFeeData?: boolean;
   hasSelfStakeData?: boolean;
   hasProductionData?: boolean;
@@ -252,6 +258,70 @@ export function IncomeSummary({
           ))}
         </div>
       </div>
+
+      {/* APY decomposition — three lenses on yield */}
+      {summary?.apy && (
+        <div className="mt-6">
+          <h3 className="text-cream-40 text-[11px] font-body uppercase tracking-[0.12em] mb-3 flex items-center gap-2">
+            <TrendingUp className="w-3 h-3" />
+            Yield Breakdown (annualized from observed)
+          </h3>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              {
+                label: "Pool APY",
+                value: summary.apy.poolApy,
+                hint: "What the stake pool earns from precompile rewards (before commission)",
+                tone: "neutral",
+              },
+              {
+                label: "Delegator APY",
+                value: summary.apy.delegatorApy,
+                hint: `Effective rate for delegators (pool × (1 − ${validator.commissionPct}%))`,
+                tone: "neutral",
+              },
+              {
+                label: "Validator MEV APY",
+                value: summary.apy.validatorMevApy,
+                hint: "Priority fees / self-stake — value validator captures from block production",
+                tone: "highlight",
+              },
+              {
+                label: "Validator Total APY",
+                value: summary.apy.validatorTotalApy,
+                hint: "Total yield on validator self-stake (commission + self-stake share + MEV)",
+                tone: "highlight",
+              },
+            ].map((card) => {
+              const isHighlight = card.tone === "highlight";
+              return (
+                <div
+                  key={card.label}
+                  className={`${isHighlight ? "bg-phase-green/5 border-phase-green/20" : "bg-cream-5 border-cream-8"} border rounded-xl p-4`}
+                >
+                  <div
+                    className={`text-xs font-body uppercase tracking-wider mb-3 ${isHighlight ? "text-phase-green" : "text-cream-40"}`}
+                  >
+                    {card.label}
+                  </div>
+                  {card.value == null ? (
+                    <div className="text-cream-20 text-sm font-body">—</div>
+                  ) : (
+                    <div
+                      className={`text-2xl font-body font-semibold ${isHighlight ? "text-phase-green" : "text-cream"}`}
+                    >
+                      {card.value.toFixed(2)}%
+                    </div>
+                  )}
+                  <div className="text-cream-20 text-[10px] font-body mt-2 leading-snug">
+                    {card.hint}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Run rate section — clearly labeled as projection, NOT realized */}
       {rates && observed && observed.epochCount > 0 && (

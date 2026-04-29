@@ -356,6 +356,57 @@ export async function GET(
       currentSelfStakeMon = Number(sw / WEI) + Number(sw % WEI) / Number(WEI);
     }
 
+    // ─── APY decomposition ─────────────────────────────────────────────────
+    // Three lenses on yield:
+    //
+    //   poolApy        — what the stake pool earns on average (delegators
+    //                    + validator self-stake, before commission). This is
+    //                    the headline number SVT calls "vote-credit APY".
+    //   delegatorApy   — what a delegator effectively earns: pool returns
+    //                    × (1 − commission_rate). MEV doesn't flow into
+    //                    this on Monad — priority fees go to the miner.
+    //   validatorMevApy — extra yield on validator self-stake from priority
+    //                    fees (priorityFees / selfStake annualized). Null
+    //                    when we don't have indexer + self-stake coverage.
+    //   validatorTotalApy — total APY on validator self-stake = base
+    //                    delegator APY + commission take + MEV. Best lens
+    //                    on validator-side capital efficiency.
+    let poolApy: number | null = null;
+    let delegatorApy: number | null = null;
+    let validatorMevApy: number | null = null;
+    let validatorTotalApy: number | null = null;
+    if (totalEpochSpan > 0 && incomeHistory.length > 0) {
+      // Average stake across the window — use latest stake as proxy.
+      const latestStakeMon =
+        latestSnap?.stakeWei != null
+          ? Number(BigInt(latestSnap.stakeWei) / WEI) +
+            Number(BigInt(latestSnap.stakeWei) % WEI) / Number(WEI)
+          : 0;
+      if (latestStakeMon > 0) {
+        const perEpochPoolReturn =
+          totalPoolRewards / latestStakeMon / totalEpochSpan;
+        poolApy = perEpochPoolReturn * EPOCHS_PER_YEAR * 100;
+        // Last-known commission rate (avg via sum of commissionMon / poolMon)
+        const effCommissionRate =
+          totalPoolRewards > 0 ? totalCommission / totalPoolRewards : 0;
+        delegatorApy = poolApy * (1 - effCommissionRate);
+      }
+      if (
+        hasPriorityFeeData &&
+        currentSelfStakeMon != null &&
+        currentSelfStakeMon > 0
+      ) {
+        const perEpochMevReturn =
+          totalPriorityFees / currentSelfStakeMon / totalEpochSpan;
+        validatorMevApy = perEpochMevReturn * EPOCHS_PER_YEAR * 100;
+      }
+      if (hasSelfStakeData && currentSelfStakeMon != null && currentSelfStakeMon > 0) {
+        const perEpochValReturn =
+          totalValidatorIncome / currentSelfStakeMon / totalEpochSpan;
+        validatorTotalApy = perEpochValReturn * EPOCHS_PER_YEAR * 100;
+      }
+    }
+
     const response = NextResponse.json({
       validatorId,
       epochs: [...incomeHistory].reverse(), // newest first for UI
@@ -425,6 +476,12 @@ export async function GET(
           priorityFeesPerDayUsd: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY * latestPrice : null,
           priorityFeesPerMonthUsd: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_DAY * 30 * latestPrice : null,
           priorityFeesPerYearUsd: hasPriorityFeeData ? avgPriorityFeesPerEpoch * EPOCHS_PER_YEAR * latestPrice : null,
+        },
+        apy: {
+          poolApy,
+          delegatorApy,
+          validatorMevApy,
+          validatorTotalApy,
         },
         hasSelfStakeData,
         hasPriorityFeeData,
