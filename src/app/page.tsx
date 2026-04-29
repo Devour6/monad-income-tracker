@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Activity, GitCompareArrows, ExternalLink, BookOpen } from "lucide-react";
+import {
+  Activity,
+  GitCompareArrows,
+  ExternalLink,
+  BookOpen,
+  Coins,
+} from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
 import { Footer } from "@/components/footer";
@@ -143,7 +149,14 @@ export default function Home() {
               </span>
             </div>
           )}
-          <nav className="mt-4 flex items-center justify-center gap-3">
+          <nav className="mt-4 flex items-center justify-center gap-3 flex-wrap">
+            <Link
+              href="/stake"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-phase-green bg-phase-green/10 border border-phase-green/30 rounded-lg hover:bg-phase-green/15 transition-all"
+            >
+              <Coins className="w-3.5 h-3.5" />
+              Choose a Validator
+            </Link>
             <Link
               href="/network"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
