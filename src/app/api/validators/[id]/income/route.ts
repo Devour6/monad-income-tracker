@@ -357,26 +357,32 @@ export async function GET(
     }
 
     // ─── APY decomposition ─────────────────────────────────────────────────
-    // Three lenses on yield:
+    // Four lenses on yield, all annualized from the observed window:
     //
-    //   poolApy        — what the stake pool earns on average (delegators
-    //                    + validator self-stake, before commission). This is
-    //                    the headline number SVT calls "vote-credit APY".
-    //   delegatorApy   — what a delegator effectively earns: pool returns
-    //                    × (1 − commission_rate). MEV doesn't flow into
-    //                    this on Monad — priority fees go to the miner.
-    //   validatorMevApy — extra yield on validator self-stake from priority
-    //                    fees (priorityFees / selfStake annualized). Null
-    //                    when we don't have indexer + self-stake coverage.
-    //   validatorTotalApy — total APY on validator self-stake = base
-    //                    delegator APY + commission take + MEV. Best lens
-    //                    on validator-side capital efficiency.
+    //   poolApy           — pool rewards / total pool stake (before
+    //                       commission). The headline "vote-credit APY".
+    //   delegatorApy      — pool × (1 − commission_rate); what a delegator
+    //                       nets after the validator's cut. On Monad,
+    //                       priority fees flow to the miner address, so
+    //                       delegators don't share in MEV today.
+    //   validatorCapitalApy — yield on the validator's OWN stake from the
+    //                       precompile pool + priority fees (i.e. setting
+    //                       commission aside, what does the company earn
+    //                       on capital it actually has at risk).
+    //   commissionYieldApy — commission + priority fees / TOTAL stake.
+    //                       Network-level extraction rate; useful for
+    //                       comparing "tax burden" across validators.
+    //
+    // We deliberately avoid a "Total APY on self-stake" headline because
+    // commission income is leverage on OUTSIDE capital, not yield on
+    // self-stake. Conflating them inflates the number into nonsense (a
+    // 100K-self-stake validator earning $35K commission/12d would print as
+    // ~1000% APY which is mathematically true but materially misleading).
     let poolApy: number | null = null;
     let delegatorApy: number | null = null;
-    let validatorMevApy: number | null = null;
-    let validatorTotalApy: number | null = null;
+    let validatorCapitalApy: number | null = null;
+    let commissionYieldApy: number | null = null;
     if (totalEpochSpan > 0 && incomeHistory.length > 0) {
-      // Average stake across the window — use latest stake as proxy.
       const latestStakeMon =
         latestSnap?.stakeWei != null
           ? Number(BigInt(latestSnap.stakeWei) / WEI) +
@@ -386,24 +392,31 @@ export async function GET(
         const perEpochPoolReturn =
           totalPoolRewards / latestStakeMon / totalEpochSpan;
         poolApy = perEpochPoolReturn * EPOCHS_PER_YEAR * 100;
-        // Last-known commission rate (avg via sum of commissionMon / poolMon)
         const effCommissionRate =
           totalPoolRewards > 0 ? totalCommission / totalPoolRewards : 0;
         delegatorApy = poolApy * (1 - effCommissionRate);
+        const commissionPlusMev =
+          totalCommission + (hasPriorityFeeData ? totalPriorityFees : 0);
+        const perEpochCommYield =
+          commissionPlusMev / latestStakeMon / totalEpochSpan;
+        commissionYieldApy = perEpochCommYield * EPOCHS_PER_YEAR * 100;
       }
       if (
-        hasPriorityFeeData &&
+        hasSelfStakeData &&
         currentSelfStakeMon != null &&
         currentSelfStakeMon > 0
       ) {
-        const perEpochMevReturn =
-          totalPriorityFees / currentSelfStakeMon / totalEpochSpan;
-        validatorMevApy = perEpochMevReturn * EPOCHS_PER_YEAR * 100;
-      }
-      if (hasSelfStakeData && currentSelfStakeMon != null && currentSelfStakeMon > 0) {
-        const perEpochValReturn =
-          totalValidatorIncome / currentSelfStakeMon / totalEpochSpan;
-        validatorTotalApy = perEpochValReturn * EPOCHS_PER_YEAR * 100;
+        // Yield on validator's own capital = pool yield on their self-stake
+        // share + priority fees attributed to self-stake share.
+        // We use selfStakeRewardsMon (already self-stake's portion of the
+        // delegator pool) + a proportional slice of priority fees.
+        const selfShareOfFees = hasPriorityFeeData
+          ? totalPriorityFees * (currentSelfStakeMon / latestStakeMon)
+          : 0;
+        const capitalIncome = totalSelfStakeRewards + selfShareOfFees;
+        const perEpochCapReturn =
+          capitalIncome / currentSelfStakeMon / totalEpochSpan;
+        validatorCapitalApy = perEpochCapReturn * EPOCHS_PER_YEAR * 100;
       }
     }
 
@@ -480,8 +493,8 @@ export async function GET(
         apy: {
           poolApy,
           delegatorApy,
-          validatorMevApy,
-          validatorTotalApy,
+          validatorCapitalApy,
+          commissionYieldApy,
         },
         hasSelfStakeData,
         hasPriorityFeeData,

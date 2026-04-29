@@ -51,8 +51,8 @@ interface IncomeSummary {
   apy?: {
     poolApy: number | null;
     delegatorApy: number | null;
-    validatorMevApy: number | null;
-    validatorTotalApy: number | null;
+    validatorCapitalApy: number | null;
+    commissionYieldApy: number | null;
   };
   hasPriorityFeeData?: boolean;
   hasSelfStakeData?: boolean;
@@ -271,25 +271,25 @@ export function IncomeSummary({
               {
                 label: "Pool APY",
                 value: summary.apy.poolApy,
-                hint: "What the stake pool earns from precompile rewards (before commission)",
+                hint: "Pool rewards / total pool stake — the headline 'vote-credit' APY before commission",
                 tone: "neutral",
               },
               {
                 label: "Delegator APY",
                 value: summary.apy.delegatorApy,
-                hint: `Effective rate for delegators (pool × (1 − ${validator.commissionPct}%))`,
+                hint: `What delegators net after the ${validator.commissionPct}% commission cut`,
                 tone: "neutral",
               },
               {
-                label: "Validator MEV APY",
-                value: summary.apy.validatorMevApy,
-                hint: "Priority fees / self-stake — value validator captures from block production",
+                label: "Validator Capital APY",
+                value: summary.apy.validatorCapitalApy,
+                hint: "Yield on validator's own self-stake (pool share + their slice of priority fees)",
                 tone: "highlight",
               },
               {
-                label: "Validator Total APY",
-                value: summary.apy.validatorTotalApy,
-                hint: "Total yield on validator self-stake (commission + self-stake share + MEV)",
+                label: "Commission + MEV Yield",
+                value: summary.apy.commissionYieldApy,
+                hint: "(Commission + priority fees) / total stake — extraction rate vs network",
                 tone: "highlight",
               },
             ].map((card) => {
