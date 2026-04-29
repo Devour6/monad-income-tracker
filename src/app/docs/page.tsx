@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
 import { Footer } from "@/components/footer";
+import { IndexerStatus } from "@/components/indexer-status";
 
 const BASE_URL = "https://monad-income-tracker.vercel.app";
 
@@ -292,6 +293,11 @@ export default function DocsPage() {
             historical staking data.
           </p>
         </header>
+
+        {/* Live indexer status */}
+        <section className="mb-10">
+          <IndexerStatus />
+        </section>
 
         {/* Intro */}
         <section className="mb-10">
