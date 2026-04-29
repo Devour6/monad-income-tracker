@@ -1,0 +1,42 @@
+name: Index Monad Blocks
+
+# Continuous block-level priority-fee indexer.
+# Runs every 5 minutes (GitHub Actions cron precision is ~best-effort but
+# typically fires within 1-2 minutes of schedule). Each run:
+#   - Resumes from last-indexed block via the /api/cron/index-blocks endpoint
+#   - Walks forward up to ~50s of wall-clock budget
+#   - Auto-resolves any new miners discovered
+#
+# At ~5 blocks/sec ingest, 5min cadence comfortably keeps up with Monad's
+# realtime ~1 block/sec block production. The endpoint is idempotent and
+# advances its own cursor, so missed runs (e.g. GHA queue delays) self-heal
+# on the next fire.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # manual trigger from GitHub UI for backfills
+
+permissions:
+  contents: read
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: index-blocks
+      cancel-in-progress: false # never cancel an in-flight run mid-batch
+    steps:
+      - name: Hit indexer endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --max-time 65 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://monad-income-tracker.vercel.app/api/cron/index-blocks" \
+            | tee /tmp/result.json
+          echo ""
+          echo "--- summary ---"
+          jq -r '"  blocks: \(.blocksProcessed)  attributed: \(.blocksAttributed)  fees(wei): \(.totalPriorityFeesWei)  miners: \(.minersTouched)  resolved: \(.minersResolved)  duration: \(.durationMs)ms  end: \(.endBlock)"' /tmp/result.json
