@@ -8,6 +8,7 @@ import {
   ExternalLink,
   BookOpen,
   Coins,
+  Scale,
 } from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
@@ -170,6 +171,13 @@ export default function Home() {
             >
               <GitCompareArrows className="w-3.5 h-3.5" />
               Compare Validators
+            </Link>
+            <Link
+              href="/methodology"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
+            >
+              <Scale className="w-3.5 h-3.5" />
+              Methodology
             </Link>
             <Link
               href="/docs"
