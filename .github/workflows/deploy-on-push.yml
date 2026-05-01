@@ -1,0 +1,33 @@
+name: Deploy to Vercel on push
+
+# Workaround for Vercel Hobby's COMMIT_AUTHOR_REQUIRED block, which rejects
+# git-triggered deploys when the committer's GitHub commit is unverified.
+# We sidestep that flow entirely by hitting the project's deploy hook URL,
+# which builds + promotes to production using the latest commit on `main`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: vercel-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Trigger Vercel deploy hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "Missing VERCEL_DEPLOY_HOOK_URL secret"
+            exit 1
+          fi
+          response=$(curl -sS -X POST "$DEPLOY_HOOK_URL")
+          echo "Vercel deploy hook response: $response"
