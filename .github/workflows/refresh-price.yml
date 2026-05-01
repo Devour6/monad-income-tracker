@@ -1,0 +1,28 @@
+name: Refresh MON price
+
+# Pings /api/cron/refresh-price every 2 minutes so the DB-stored MON price
+# (read by network/overview, income, MEV, simulator, reports) tracks live
+# market price within 2 min instead of lagging up to 24h with the daily
+# snapshot cron.
+
+on:
+  schedule:
+    - cron: "*/2 * * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit refresh-price endpoint
+        run: |
+          set -euo pipefail
+          URL="https://monad-income-tracker.vercel.app/api/cron/refresh-price"
+          AUTH=""
+          if [ -n "${CRON_SECRET:-}" ]; then
+            AUTH="-H \"Authorization: Bearer ${CRON_SECRET}\""
+          fi
+          # shellcheck disable=SC2086
+          eval curl -sS -w '\nHTTP %{http_code}\n' --max-time 30 $AUTH "$URL"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
