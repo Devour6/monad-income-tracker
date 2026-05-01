@@ -1,0 +1,32 @@
+name: Evaluate validator alerts
+# Polls /api/cron/evaluate-alerts on a schedule. The endpoint walks every
+# active alert, recomputes the watched metric from on-chain data, and POSTs
+# any triggered fires to the user-supplied webhook.
+#
+# We use GitHub Actions instead of vercel.json because the Hobby plan caps
+# Vercel cron to a single daily slot. Actions runs every 15 min cleanly.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hit evaluate-alerts endpoint
+        env:
+          BASE_URL: ${{ vars.BASE_URL || 'https://monad-income-tracker.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -n "$CRON_SECRET" ]; then
+            AUTH="Authorization: Bearer $CRON_SECRET"
+          else
+            AUTH=""
+          fi
+          curl -fsS -m 120 -H "$AUTH" "$BASE_URL/api/cron/evaluate-alerts" | head -c 4000
