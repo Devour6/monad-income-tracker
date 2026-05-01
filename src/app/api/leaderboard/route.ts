@@ -34,8 +34,9 @@ import { calculateEpochReward } from "@/lib/monad-rpc";
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
+    const rawLookback = parseInt(url.searchParams.get("lookback") || "7", 10);
     const lookback = Math.min(
-      Math.max(parseInt(url.searchParams.get("lookback") || "7", 10), 1),
+      Math.max(isNaN(rawLookback) ? 7 : rawLookback, 1),
       30,
     );
 

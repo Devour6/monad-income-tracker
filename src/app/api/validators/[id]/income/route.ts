@@ -40,8 +40,9 @@ export async function GET(
   }
 
   const url = new URL(request.url);
+  const rawEpochs = parseInt(url.searchParams.get("epochs") || "30", 10);
   const epochCount = Math.min(
-    parseInt(url.searchParams.get("epochs") || "30", 10),
+    Math.max(isNaN(rawEpochs) ? 30 : rawEpochs, 1),
     365
   );
 

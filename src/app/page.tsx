@@ -9,6 +9,9 @@ import {
   BookOpen,
   Coins,
   Scale,
+  TrendingUp,
+  Zap,
+  FileText,
 } from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
@@ -171,6 +174,27 @@ export default function Home() {
             >
               <GitCompareArrows className="w-3.5 h-3.5" />
               Compare Validators
+            </Link>
+            <Link
+              href="/simulate"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              Income Simulator
+            </Link>
+            <Link
+              href="/reports"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Reports
+            </Link>
+            <Link
+              href="/mev"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-40 bg-cream-5 border border-cream-8 rounded-lg hover:bg-cream-8 hover:text-cream-60 transition-all"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              MEV Analytics
             </Link>
             <Link
               href="/methodology"
