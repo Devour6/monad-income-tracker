@@ -2,17 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import {
-  Activity,
-  GitCompareArrows,
-  TrendingUp,
-  FileText,
-  Bell,
-  Code2,
-  ArrowRight,
-  Coins,
-  ExternalLink,
-} from "lucide-react";
+import { ArrowRight, ExternalLink } from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
 import { Footer } from "@/components/footer";
@@ -93,48 +83,14 @@ function fmtPrice(n: number): string {
   return `$${n.toFixed(4)}`;
 }
 
-const QUICK_LINKS: Array<{
-  href: string;
-  label: string;
-  desc: string;
-  Icon: typeof Activity;
-}> = [
-  {
-    href: "/stake",
-    label: "All validators",
-    desc: "Sortable leaderboard",
-    Icon: Coins,
-  },
-  {
-    href: "/network",
-    label: "Network overview",
-    desc: "Aggregate stats",
-    Icon: Activity,
-  },
-  {
-    href: "/compare",
-    label: "Compare",
-    desc: "Side-by-side",
-    Icon: GitCompareArrows,
-  },
-  {
-    href: "/simulate",
-    label: "Simulate",
-    desc: "Project delegator returns",
-    Icon: TrendingUp,
-  },
-  {
-    href: "/reports",
-    label: "Reports",
-    desc: "CSV / PDF income",
-    Icon: FileText,
-  },
-  {
-    href: "/alerts",
-    label: "Alerts",
-    desc: "Webhook notifications",
-    Icon: Bell,
-  },
+// Text-only explore links — no icons, no AI vibe.
+const EXPLORE_LINKS: Array<{ href: string; label: string; desc: string }> = [
+  { href: "/stake", label: "All validators", desc: "Sortable leaderboard" },
+  { href: "/network", label: "Network overview", desc: "Aggregate stats" },
+  { href: "/compare", label: "Compare", desc: "Side-by-side" },
+  { href: "/simulate", label: "Simulate", desc: "Project delegator returns" },
+  { href: "/reports", label: "Reports", desc: "CSV / PDF income" },
+  { href: "/mev", label: "MEV", desc: "Priority fee analytics" },
 ];
 
 export default function Home() {
@@ -147,7 +103,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [dbReady, setDbReady] = useState(true);
 
-  // Validator list
   useEffect(() => {
     fetch("/api/validators")
       .then((r) => r.json())
@@ -157,7 +112,6 @@ export default function Home() {
       .catch(() => setDbReady(false));
   }, []);
 
-  // Network overview
   useEffect(() => {
     fetch("/api/network/overview")
       .then((r) => r.json())
@@ -167,7 +121,6 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  // Live MON price (refresh every 30s)
   useEffect(() => {
     let cancelled = false;
     function load() {
@@ -186,7 +139,6 @@ export default function Home() {
     };
   }, []);
 
-  // Fetch realized income + epoch chart history when a validator is picked
   const fetchValidator = useCallback(async (id: number) => {
     setLoading(true);
     try {
@@ -217,7 +169,7 @@ export default function Home() {
       <FloatingParticles />
 
       <div className="max-w-[1100px] mx-auto">
-        {/* Top bar — minimal, just title + live price + nav links */}
+        {/* Top bar */}
         <header className="flex items-center justify-between mb-12 opacity-0 animate-fade-in-up">
           <div className="flex items-center gap-3">
             <h1 className="font-display text-xl text-cream tracking-[0.04em]">
@@ -247,7 +199,7 @@ export default function Home() {
           </nav>
         </header>
 
-        {/* Hero — clean centered headline + price tile */}
+        {/* Hero */}
         <section
           className="text-center mb-10 opacity-0 animate-fade-in-up"
           style={{ animationDelay: "0.08s" }}
@@ -262,7 +214,6 @@ export default function Home() {
             from the Monad staking precompile. Open data for every validator.
           </p>
 
-          {/* Live tile row — only 3 numbers, calm */}
           <div className="mt-8 inline-flex items-center gap-6 sm:gap-10 px-6 py-3 rounded-xl border border-cream-8 bg-cream-5">
             <div className="text-left">
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 flex items-center gap-1.5">
@@ -300,7 +251,6 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* Search — single row, max-width contained */}
             <section
               className="max-w-2xl mx-auto mb-10 opacity-0 animate-fade-in-up"
               style={{ animationDelay: "0.16s" }}
@@ -312,11 +262,9 @@ export default function Home() {
               />
             </section>
 
-            {/* Selected validator — focus on REALIZED commission */}
             {selected && (
               <section className="mb-12 animate-fade-in">
                 <div className="rounded-2xl border border-cream-12 bg-cream-5 p-6 sm:p-8">
-                  {/* Heading row */}
                   <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
                     <div>
                       <div className="flex items-center gap-2.5 mb-1">
@@ -353,7 +301,6 @@ export default function Home() {
                     </div>
                   ) : realized ? (
                     <>
-                      {/* Headline number — REALIZED lifetime commission */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                         <div className="rounded-xl border border-phase-green/30 bg-phase-green/5 p-5">
                           <div className="text-[10px] font-body uppercase tracking-widest text-phase-green mb-1.5">
@@ -400,7 +347,6 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Per-epoch chart */}
                       {epochHistory.length > 0 && (
                         <div className="rounded-xl border border-cream-8 bg-dark p-4">
                           <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-2">
@@ -420,7 +366,7 @@ export default function Home() {
               </section>
             )}
 
-            {/* Quick links — small, calm grid */}
+            {/* Explore — text-only, no icons */}
             <section
               className="mb-12 opacity-0 animate-fade-in-up"
               style={{ animationDelay: "0.24s" }}
@@ -429,55 +375,53 @@ export default function Home() {
                 Explore
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {QUICK_LINKS.map(({ href, label, desc, Icon }) => (
+                {EXPLORE_LINKS.map(({ href, label, desc }) => (
                   <Link
                     key={href}
                     href={href}
-                    className="group flex items-center gap-3 rounded-lg border border-cream-8 bg-cream-5 px-4 py-3 hover:border-cream-20 hover:bg-cream-8 transition-colors"
+                    className="group rounded-lg border border-cream-8 bg-cream-5 px-4 py-3 hover:border-cream-20 hover:bg-cream-8 transition-colors"
                   >
-                    <Icon className="w-4 h-4 text-cream-60 group-hover:text-phase-green transition-colors shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-cream text-sm font-body font-medium">
-                        {label}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-cream text-sm font-body font-medium">
+                          {label}
+                        </div>
+                        <div className="text-cream-40 text-[11px] font-body truncate">
+                          {desc}
+                        </div>
                       </div>
-                      <div className="text-cream-40 text-[11px] font-body truncate">
-                        {desc}
-                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-cream-20 group-hover:text-cream-60 group-hover:translate-x-0.5 transition-all shrink-0" />
                     </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-cream-20 group-hover:text-cream-60 group-hover:translate-x-0.5 transition-all shrink-0" />
                   </Link>
                 ))}
               </div>
             </section>
 
-            {/* Trust footer — open source + API + methodology */}
+            {/* Trust footer */}
             <section
               className="opacity-0 animate-fade-in-up"
               style={{ animationDelay: "0.32s" }}
             >
               <div className="rounded-xl border border-cream-8 bg-cream-5 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Code2 className="w-4 h-4 text-cream-60" />
-                  <span className="text-cream-60 text-xs font-body">
-                    Every formula is{" "}
-                    <Link
-                      href="/methodology"
-                      className="text-phase-green hover:underline"
-                    >
-                      auditable
-                    </Link>
-                    . Source on{" "}
-                    <a
-                      href="https://github.com/Devour6/monad-income-tracker"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-phase-green hover:underline"
-                    >
-                      GitHub
-                    </a>
-                    .
-                  </span>
-                </div>
+                <span className="text-cream-60 text-xs font-body">
+                  Every formula is{" "}
+                  <Link
+                    href="/methodology"
+                    className="text-phase-green hover:underline"
+                  >
+                    auditable
+                  </Link>
+                  . Source on{" "}
+                  <a
+                    href="https://github.com/Devour6/monad-income-tracker"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-phase-green hover:underline"
+                  >
+                    GitHub
+                  </a>
+                  .
+                </span>
                 <Link
                   href="/sdk"
                   className="inline-flex items-center gap-1.5 text-xs font-body text-cream-60 hover:text-cream transition-colors"
