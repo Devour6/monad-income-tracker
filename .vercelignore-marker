@@ -1,0 +1,4 @@
+# This file exists to bump deploys with verified commit authorship.
+# Vercel's Hobby tier requires git commits to be associated with a
+# verified user; resetting the git author email to the Vercel-registered
+# address unblocks production deploys.
