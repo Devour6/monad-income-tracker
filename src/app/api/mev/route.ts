@@ -7,21 +7,25 @@ import {
   networkEpochs,
 } from "@/lib/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
+import { getLiveMonPrice } from "@/lib/price";
 
 /**
  * GET /api/mev?lookback=30
  *
- * Network-wide MEV / priority-fee analytics, sourced from the block-level
- * indexer. Three views:
+ * Network-wide priority-fee analytics from the block-level indexer.
  *
+ * Three views:
  *   1. networkSeries — per-epoch totals (fees MON, USD, blocks)
- *   2. validatorLeaderboard — top N validators by priority fees in window,
- *      with per-block average and share of total
- *   3. unmappedMiners — miner addresses producing blocks but NOT yet
- *      attributed to a validatorId (operator action item)
+ *   2. validatorLeaderboard — top N validators by priority fees in window
+ *   3. unmappedMiners — miner addresses producing blocks but not yet
+ *      attributed to a validator (operator action item)
  *
- * The query joins miner_aliases for attribution; rows where there is no
- * alias still appear in `unmappedMiners` so we can surface them.
+ * USD math note: historical `network_epochs.mon_price_usd` rows were
+ * stamped before the price-refresh cron came online, so most older epochs
+ * have stale or zero prices. Network-wide USD totals therefore use the
+ * CURRENT live MON price × total MON fees (consistent with how a CFO
+ * would value lifetime earnings — at today's price). Per-epoch USD also
+ * falls back to live price when historical price is missing/zero.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -35,7 +39,6 @@ export async function GET(request: Request) {
   );
 
   try {
-    // Find the highest indexed epoch.
     const latestRow = (await db
       .select({ maxEpoch: sql<number>`MAX(${epochPriorityFees.epoch})` })
       .from(epochPriorityFees)) as unknown as { maxEpoch: number | null }[];
@@ -52,7 +55,6 @@ export async function GET(request: Request) {
 
     const fromEpoch = latestEpoch - lookback + 1;
 
-    // Per-epoch network totals.
     const networkRows = (await db
       .select({
         epoch: epochPriorityFees.epoch,
@@ -68,7 +70,7 @@ export async function GET(request: Request) {
       blocks: number;
     }[];
 
-    // Prices for those epochs.
+    // Historical prices (best-effort — many will be 0).
     const epochList = networkRows.map((r) => r.epoch);
     const priceRows =
       epochList.length > 0
@@ -81,15 +83,19 @@ export async function GET(request: Request) {
     for (const p of priceRows) {
       priceMap.set(p.epoch, Number(p.monPriceUsd) || 0);
     }
-    const latestPrice =
-      [...priceMap.values()].reverse().find((p) => p > 0) ?? 0;
+
+    // Live price — single source of truth for any USD valuation. Used both
+    // as the network-totals multiplier AND as the per-epoch fallback.
+    const live = await getLiveMonPrice().catch(() => ({ price: 0 }));
+    const livePrice = (live as { price: number }).price || 0;
 
     const WEI = BigInt(10) ** BigInt(18);
     const networkSeries = networkRows.map((r) => {
       const wei = BigInt(r.feesWei || "0");
       const feesMon =
         Number(wei / WEI) + Number(wei % WEI) / Number(WEI);
-      const price = priceMap.get(r.epoch) ?? 0;
+      const histPrice = priceMap.get(r.epoch) ?? 0;
+      const price = histPrice > 0 ? histPrice : livePrice;
       return {
         epoch: r.epoch,
         feesMon,
@@ -125,7 +131,6 @@ export async function GET(request: Request) {
       0
     );
 
-    // Resolve validator names.
     const ids = leaderboardRows.map((r) => r.validatorId);
     const nameRows =
       ids.length > 0
@@ -166,7 +171,7 @@ export async function GET(request: Request) {
           commissionPct: meta?.commissionPct ? Number(meta.commissionPct) : null,
           stakeMon: meta?.stakeMon ? Number(meta.stakeMon) : null,
           feesMon,
-          feesUsd: feesMon * latestPrice,
+          feesUsd: feesMon * livePrice,
           blocks: Number(r.blocks || 0),
           avgFeePerBlockMon:
             r.blocks > 0 ? feesMon / Number(r.blocks) : 0,
@@ -177,7 +182,6 @@ export async function GET(request: Request) {
       .sort((a, b) => b.feesMon - a.feesMon)
       .slice(0, limit);
 
-    // Unmapped miners — produced blocks but no validator attribution yet.
     const unmappedRows = (await db
       .select({
         minerAddress: epochPriorityFees.minerAddress,
@@ -211,6 +215,7 @@ export async function GET(request: Request) {
       return {
         minerAddress: r.minerAddress,
         feesMon,
+        feesUsd: feesMon * livePrice,
         blocks: Number(r.blocks || 0),
       };
     });
@@ -219,7 +224,11 @@ export async function GET(request: Request) {
       (s, r) => s + r.blocks,
       0
     );
-    const totalNetworkUsd = networkSeries.reduce((s, r) => s + r.feesUsd, 0);
+    // Network-wide USD = live MON price × total MON. This is the "what
+    // would these fees be worth at today's market price" view, which
+    // matches how operators think about their take. Per-epoch USD in
+    // networkSeries can use historical price when available for charting.
+    const totalNetworkUsd = totalNetworkFeesMon * livePrice;
 
     const response = NextResponse.json({
       window: {
@@ -236,7 +245,7 @@ export async function GET(request: Request) {
           totalNetworkBlocks > 0
             ? totalNetworkFeesMon / totalNetworkBlocks
             : 0,
-        latestMonPriceUsd: latestPrice,
+        latestMonPriceUsd: livePrice,
       },
       networkSeries,
       validatorLeaderboard,
@@ -244,7 +253,7 @@ export async function GET(request: Request) {
     });
     response.headers.set(
       "Cache-Control",
-      "public, s-maxage=300, stale-while-revalidate=600"
+      "public, s-maxage=120, stale-while-revalidate=300"
     );
     return response;
   } catch (error) {

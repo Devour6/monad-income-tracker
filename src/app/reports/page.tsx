@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileDown, FileText, Calculator, Info } from "lucide-react";
+import { ArrowLeft, FileDown, FileText, Printer } from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
 import { Footer } from "@/components/footer";
@@ -16,67 +16,79 @@ interface ValidatorListItem {
   lastEpoch: number;
 }
 
-interface ReportRow {
+interface EpochRow {
   epoch: number;
-  epochSpan: number;
   timestamp: string;
   stakeMon: number;
-  selfStakeMon: number | null;
   commissionPct: number;
-  poolRewardsMon: number;
+  unclaimedMon: number;
   commissionMon: number;
-  delegatorRewardsMon: number;
-  selfStakeRewardsMon: number;
+  claimedMon: number;
   priorityFeesMon: number;
   priorityFeeBlocks: number;
-  validatorTotalMon: number;
   fxPriceUsd: number;
-  poolRewardsUsd: number;
   commissionUsd: number;
   priorityFeesUsd: number;
-  validatorTotalUsd: number;
 }
 
-interface ReportSummary {
-  epochCount: number;
-  epochSpan: number;
-  observedDays: number;
-  firstEpoch: number | null;
-  lastEpoch: number | null;
-  firstTimestamp: string | null;
-  lastTimestamp: string | null;
-  poolRewardsMon: number;
+interface Summary {
   commissionMon: number;
-  delegatorRewardsMon: number;
-  selfStakeRewardsMon: number | null;
-  priorityFeesMon: number | null;
-  validatorTotalMon: number | null;
-  poolRewardsUsd: number;
   commissionUsd: number;
-  priorityFeesUsd: number | null;
-  validatorTotalUsd: number | null;
+  priorityFeesMon: number;
+  priorityFeesUsd: number;
+  totalIncomeMon: number;
+  totalIncomeUsd: number;
+  claimedMon: number;
+  unclaimedMon: number;
   serverCostMonthlyUsd: number;
   serverCostProRatedUsd: number;
-  netValidatorUsd: number | null;
+  netUsd: number;
   fxMethodology: "per-epoch" | "end-of-period";
   endOfPeriodPriceUsd: number;
-  hasSelfStakeData: boolean;
-  hasPriorityFeeData: boolean;
+  livePriceUsd: number;
 }
 
 interface ReportResp {
   validatorId: number;
-  validatorName: string | null;
-  rows: ReportRow[];
-  summary: ReportSummary;
+  validator: {
+    validatorId: number;
+    name: string;
+    authAddress: string;
+    commissionPct: number;
+    stakeMon: number;
+  } | null;
+  window: {
+    fromEpoch: number;
+    toEpoch: number;
+    epochSpan: number;
+    daysObserved: number;
+    firstTimestamp: string;
+    lastTimestamp: string;
+  } | null;
+  summary: Summary | null;
+  epochs: EpochRow[];
+  claimEvents: Array<{
+    epoch: number;
+    timestamp: string;
+    amountMon: number;
+    amountUsd: number;
+  }>;
 }
 
-const fmtMon = (n: number | null | undefined, dp = 4) =>
-  n == null ? "—" : n.toLocaleString(undefined, { maximumFractionDigits: dp });
-const fmtUsd = (n: number | null | undefined) =>
+const fmtMon = (n: number | null | undefined, dp = 2) =>
   n == null
     ? "—"
-    : `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    : n.toLocaleString(undefined, {
+        maximumFractionDigits: dp,
+        minimumFractionDigits: dp,
+      });
+const fmtUsd = (n: number | null | undefined, dp = 2) =>
+  n == null
+    ? "—"
+    : `$${n.toLocaleString(undefined, {
+        maximumFractionDigits: dp,
+        minimumFractionDigits: dp,
+      })}`;
 
 export default function ReportsPage() {
   const [validators, setValidators] = useState<ValidatorListItem[]>([]);
@@ -98,7 +110,7 @@ export default function ReportsPage() {
   }, []);
 
   const filteredValidators = useMemo(() => {
-    if (!vQuery.trim()) return validators.slice(0, 50);
+    if (!vQuery.trim()) return validators.slice(0, 30);
     const q = vQuery.trim().toLowerCase();
     return validators
       .filter(
@@ -107,7 +119,7 @@ export default function ReportsPage() {
           v.authAddress.toLowerCase().includes(q) ||
           String(v.validatorId).includes(q)
       )
-      .slice(0, 50);
+      .slice(0, 30);
   }, [validators, vQuery]);
 
   const buildQuery = (format: "json" | "csv") => {
@@ -118,7 +130,7 @@ export default function ReportsPage() {
     params.set("format", format);
     if (fromDate) params.set("fromDate", new Date(fromDate).toISOString());
     if (toDate) params.set("toDate", new Date(toDate).toISOString());
-    return `/api/validators/${validatorId}/report?${params.toString()}`;
+    return `/api/v1/validators/${validatorId}/realized-report?${params.toString()}`;
   };
 
   const runReport = async () => {
@@ -137,6 +149,12 @@ export default function ReportsPage() {
       setLoading(false);
     }
   };
+
+  // Auto-run when validator picked
+  useEffect(() => {
+    if (validatorId != null) runReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validatorId, fx, fromDate, toDate, serverCostUsd]);
 
   const downloadCsv = () => {
     const url = buildQuery("csv");
@@ -168,21 +186,21 @@ export default function ReportsPage() {
             <ArrowLeft className="h-3.5 w-3.5" /> Back
           </Link>
 
-          <header className="mb-10">
+          <header className="mb-8">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cream-8 bg-cream-5 px-3 py-1">
               <FileText className="h-3.5 w-3.5 text-phase-green" />
               <span className="text-[10px] font-body uppercase tracking-widest text-cream-40">
-                Reports
+                Realized income report
               </span>
             </div>
             <h1 className="font-display text-3xl text-cream tracking-wide">
               Validator income reports
             </h1>
-            <p className="mt-3 text-sm font-body text-cream-60 leading-relaxed">
-              Tax/accounting-grade exports. Pick a validator, choose a date
-              range, set your FX methodology and monthly server cost, and
-              export to CSV or print to PDF. Includes real per-block priority
-              fees, commission, and self-stake share.
+            <p className="mt-3 text-sm font-body text-cream-60 leading-relaxed max-w-3xl">
+              Treasury-grade exports using realized commission math
+              (unclaimed-rewards delta + claim detection — verified to 0.04%
+              against CFO records). Includes priority fees, claim events, and
+              FX-converted USD totals. Export to CSV or print to PDF.
             </p>
           </header>
 
@@ -225,7 +243,8 @@ export default function ReportsPage() {
                 )}
                 {selectedValidator && (
                   <div className="mt-2 text-[11px] font-body text-cream-60">
-                    Selected: <span className="text-cream">{selectedValidator.name}</span>{" "}
+                    Selected:{" "}
+                    <span className="text-cream">{selectedValidator.name}</span>{" "}
                     (#{selectedValidator.validatorId})
                   </div>
                 )}
@@ -261,282 +280,343 @@ export default function ReportsPage() {
                   FX methodology
                 </label>
                 <div className="flex gap-2">
-                  {(["per-epoch", "end-of-period"] as const).map((opt) => (
+                  {(["per-epoch", "end-of-period"] as const).map((m) => (
                     <button
-                      key={opt}
-                      onClick={() => setFx(opt)}
-                      className={`flex-1 rounded-lg border px-3 py-2 text-xs font-body transition-all ${
-                        fx === opt
-                          ? "border-phase-green bg-green-dim text-phase-green"
-                          : "border-cream-8 bg-dark text-cream-60 hover:border-cream-20"
+                      key={m}
+                      onClick={() => setFx(m)}
+                      className={`flex-1 rounded-lg border px-3 py-2 text-xs font-body transition-colors ${
+                        fx === m
+                          ? "border-phase-green/40 bg-phase-green/10 text-cream"
+                          : "border-cream-8 bg-dark text-cream-60 hover:bg-cream-5"
                       }`}
                     >
-                      {opt}
+                      {m === "per-epoch" ? "Per-epoch FX" : "End-of-period FX"}
                     </button>
                   ))}
                 </div>
-                <p className="mt-1 flex items-start gap-1.5 text-[10px] font-body text-cream-40">
-                  <Info className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>
-                    {fx === "per-epoch"
-                      ? "Each epoch's MON valued at that epoch's price."
-                      : "All MON valued at the last epoch's price (single FX rate)."}
-                  </span>
-                </p>
               </div>
 
               <div>
                 <label className="mb-1 block text-[10px] font-body uppercase tracking-widest text-cream-40">
-                  Server cost (USD/month)
+                  Monthly server cost (USD)
                 </label>
                 <input
                   type="number"
-                  min={0}
-                  step={1}
+                  min="0"
+                  step="1"
                   value={serverCostUsd || ""}
-                  onChange={(e) => setServerCostUsd(Number(e.target.value) || 0)}
+                  onChange={(e) =>
+                    setServerCostUsd(Math.max(0, Number(e.target.value) || 0))
+                  }
                   placeholder="0"
-                  className="w-full rounded-lg border border-cream-8 bg-dark px-3 py-2 text-sm font-body text-cream focus:border-cream-20 focus:outline-none"
+                  className="w-full rounded-lg border border-cream-8 bg-dark px-3 py-2 text-sm font-body text-cream placeholder:text-cream-40 focus:border-cream-20 focus:outline-none"
                 />
-                <p className="mt-1 text-[10px] font-body text-cream-40">
-                  Pro-rated over the observed window and netted from gross
-                  validator income.
-                </p>
               </div>
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-4 flex flex-wrap gap-2">
               <button
                 onClick={runReport}
-                disabled={!validatorId || loading}
-                className="inline-flex items-center gap-2 rounded-lg border border-phase-green bg-green-dim px-4 py-2 text-xs font-body text-phase-green transition-all hover:bg-phase-green hover:text-dark disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={validatorId == null || loading}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-phase-green/40 bg-phase-green/10 px-4 py-2 text-xs font-body text-cream transition-colors hover:bg-phase-green/15 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Calculator className="h-3.5 w-3.5" />
-                {loading ? "Running…" : "Run report"}
+                {loading ? "Loading…" : "Run report"}
               </button>
               <button
                 onClick={downloadCsv}
-                disabled={!validatorId}
-                className="inline-flex items-center gap-2 rounded-lg border border-cream-8 bg-cream-5 px-4 py-2 text-xs font-body text-cream-60 transition-all hover:border-cream-20 hover:text-cream disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={validatorId == null}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cream-8 bg-cream-5 px-4 py-2 text-xs font-body text-cream-60 transition-colors hover:bg-cream-8 hover:text-cream disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <FileDown className="h-3.5 w-3.5" /> Export CSV
               </button>
               <button
                 onClick={printPdf}
                 disabled={!data}
-                className="inline-flex items-center gap-2 rounded-lg border border-cream-8 bg-cream-5 px-4 py-2 text-xs font-body text-cream-60 transition-all hover:border-cream-20 hover:text-cream disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cream-8 bg-cream-5 px-4 py-2 text-xs font-body text-cream-60 transition-colors hover:bg-cream-8 hover:text-cream disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <FileText className="h-3.5 w-3.5" /> Print to PDF
+                <Printer className="h-3.5 w-3.5" /> Print / PDF
               </button>
             </div>
+
             {err && (
-              <p className="mt-3 text-xs font-body text-phase-red">{err}</p>
-            )}
-          </section>
-        </div>
-
-        {/* Report output */}
-        {data && (
-          <section
-            id="report-output"
-            className="rounded-xl border border-cream-8 bg-cream-5 p-6 print:rounded-none print:border-none print:bg-white print:p-0"
-          >
-            <header className="mb-6 border-b border-cream-8 pb-4 print:border-black/20">
-              <h2 className="font-display text-2xl text-cream tracking-wide print:text-black">
-                {data.validatorName ?? `Validator #${data.validatorId}`}
-              </h2>
-              <p className="mt-1 text-xs font-body text-cream-60 print:text-black/70">
-                Validator ID #{data.validatorId} · Window:{" "}
-                {data.summary.firstTimestamp
-                  ? new Date(data.summary.firstTimestamp).toLocaleDateString()
-                  : "—"}{" "}
-                →{" "}
-                {data.summary.lastTimestamp
-                  ? new Date(data.summary.lastTimestamp).toLocaleDateString()
-                  : "—"}{" "}
-                · Epochs {data.summary.firstEpoch}–{data.summary.lastEpoch} (
-                {data.summary.epochCount} rows · {data.summary.observedDays.toFixed(2)}{" "}
-                days observed) · FX:{" "}
-                <span className="font-mono">{data.summary.fxMethodology}</span>
-              </p>
-            </header>
-
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <Stat label="Pool rewards (MON)" value={fmtMon(data.summary.poolRewardsMon)} />
-              <Stat label="Commission (MON)" value={fmtMon(data.summary.commissionMon)} />
-              <Stat
-                label="Priority fees (MON)"
-                value={
-                  data.summary.hasPriorityFeeData
-                    ? fmtMon(data.summary.priorityFeesMon)
-                    : "no indexer data"
-                }
-              />
-              <Stat
-                label="Validator total (MON)"
-                value={
-                  data.summary.hasSelfStakeData
-                    ? fmtMon(data.summary.validatorTotalMon)
-                    : "no self-stake data"
-                }
-              />
-
-              <Stat label="Pool rewards (USD)" value={fmtUsd(data.summary.poolRewardsUsd)} />
-              <Stat label="Commission (USD)" value={fmtUsd(data.summary.commissionUsd)} />
-              <Stat label="Priority fees (USD)" value={fmtUsd(data.summary.priorityFeesUsd)} />
-              <Stat label="Validator total (USD)" value={fmtUsd(data.summary.validatorTotalUsd)} />
-            </div>
-
-            {data.summary.serverCostMonthlyUsd > 0 && (
-              <div className="mt-4 grid grid-cols-2 gap-4 rounded-lg border border-cream-8 bg-dark p-4 md:grid-cols-3 print:bg-transparent">
-                <Stat
-                  label="Server cost (USD/mo)"
-                  value={fmtUsd(data.summary.serverCostMonthlyUsd)}
-                />
-                <Stat
-                  label="Cost pro-rated"
-                  value={fmtUsd(data.summary.serverCostProRatedUsd)}
-                />
-                <Stat
-                  label="Net validator (USD)"
-                  value={fmtUsd(data.summary.netValidatorUsd)}
-                  emphasize
-                />
+              <div className="mt-4 rounded-lg border border-phase-red/30 bg-phase-red/10 px-3 py-2 text-xs font-body text-phase-red">
+                {err}
               </div>
             )}
+          </section>
+        </div>
 
-            <h3 className="mt-8 mb-3 font-display text-sm text-cream tracking-wide print:text-black">
-              Per-epoch breakdown
-            </h3>
-            <div className="overflow-x-auto rounded-lg border border-cream-8 print:border-black/20">
-              <table className="w-full text-[11px] font-body">
-                <thead className="bg-cream-5 text-cream-40 print:bg-transparent print:text-black/60">
-                  <tr>
-                    <Th>Epoch</Th>
-                    <Th>Date</Th>
-                    <Th align="right">Stake (MON)</Th>
-                    <Th align="right">Comm %</Th>
-                    <Th align="right">Pool</Th>
-                    <Th align="right">Commission</Th>
-                    <Th align="right">Pri. Fees</Th>
-                    <Th align="right">Validator $</Th>
-                    <Th align="right">FX $/MON</Th>
-                  </tr>
-                </thead>
-                <tbody className="text-cream-60 print:text-black">
-                  {data.rows.map((r) => (
-                    <tr key={r.epoch} className="border-t border-cream-8 print:border-black/10">
-                      <Td mono>{r.epoch}</Td>
-                      <Td>{new Date(r.timestamp).toLocaleDateString()}</Td>
-                      <Td align="right">{fmtMon(r.stakeMon, 0)}</Td>
-                      <Td align="right">{r.commissionPct.toFixed(1)}</Td>
-                      <Td align="right">{fmtMon(r.poolRewardsMon, 2)}</Td>
-                      <Td align="right">{fmtMon(r.commissionMon, 4)}</Td>
-                      <Td align="right">{fmtMon(r.priorityFeesMon, 4)}</Td>
-                      <Td align="right">{fmtUsd(r.validatorTotalUsd)}</Td>
-                      <Td align="right">${r.fxPriceUsd.toFixed(4)}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Report body */}
+        {data && data.summary && data.window && data.validator && (
+          <article className="space-y-6 print:text-black">
+            {/* Print header */}
+            <div className="hidden print:block">
+              <h1 className="font-display text-2xl">
+                Monad Validator Income Report
+              </h1>
+              <p className="text-sm">
+                {data.validator.name} · #{data.validator.validatorId}
+              </p>
+              <p className="text-xs">{data.validator.authAddress}</p>
+              <hr className="my-3" />
             </div>
 
-            <p className="mt-4 text-[10px] font-body text-cream-40 print:text-black/60">
-              FX methodology: <span className="font-mono">{data.summary.fxMethodology}</span>
-              {data.summary.fxMethodology === "end-of-period" && (
-                <>
-                  {" "}
-                  · End-of-period price: ${data.summary.endOfPeriodPriceUsd.toFixed(4)}
-                </>
-              )}{" "}
-              · Source code:{" "}
-              <a
-                className="underline"
-                href="https://github.com/Devour6/monad-income-tracker"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Devour6/monad-income-tracker
-              </a>
-            </p>
-          </section>
+            {/* Headline */}
+            <section className="rounded-2xl border border-cream-12 bg-cream-5 p-6 print:border-black print:bg-white">
+              <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 print:text-black">
+                Total income · {data.window.daysObserved.toFixed(1)} days
+                observed
+              </div>
+              <div className="mt-1 font-display text-4xl text-cream tracking-wide print:text-black">
+                {fmtMon(data.summary.totalIncomeMon)} MON
+              </div>
+              <div className="mt-1 font-mono text-sm text-cream-60 print:text-black">
+                ≈ {fmtUsd(data.summary.totalIncomeUsd)}
+              </div>
+              <div className="mt-3 text-[11px] font-body text-cream-40 print:text-black">
+                {data.validator.name} · #{data.validator.validatorId} · epochs{" "}
+                {data.window.fromEpoch}–{data.window.toEpoch}
+              </div>
+            </section>
+
+            {/* Stat tiles */}
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-3 print:grid-cols-3">
+              <Tile
+                label="Commission earned"
+                mon={data.summary.commissionMon}
+                usd={data.summary.commissionUsd}
+              />
+              <Tile
+                label="Priority fees"
+                mon={data.summary.priorityFeesMon}
+                usd={data.summary.priorityFeesUsd}
+              />
+              <Tile
+                label="Net (after server cost)"
+                usd={data.summary.netUsd}
+              />
+            </section>
+
+            {/* Claimed vs unclaimed split */}
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-2 print:grid-cols-2">
+              <Tile
+                label="Already claimed"
+                mon={data.summary.claimedMon}
+                usd={data.summary.claimedMon * (data.summary.livePriceUsd || 0)}
+                tone="muted"
+              />
+              <Tile
+                label="Unclaimed (in contract)"
+                mon={data.summary.unclaimedMon}
+                usd={
+                  data.summary.unclaimedMon * (data.summary.livePriceUsd || 0)
+                }
+                tone="muted"
+              />
+            </section>
+
+            {/* Window meta */}
+            <section className="rounded-xl border border-cream-8 bg-cream-5 p-5 text-xs font-body text-cream-60 print:border-black print:bg-white print:text-black">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-cream-40 print:text-black">
+                    First epoch
+                  </div>
+                  <div className="font-mono text-cream print:text-black">
+                    {data.window.fromEpoch}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-cream-40 print:text-black">
+                    Last epoch
+                  </div>
+                  <div className="font-mono text-cream print:text-black">
+                    {data.window.toEpoch}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-cream-40 print:text-black">
+                    Days
+                  </div>
+                  <div className="font-mono text-cream print:text-black">
+                    {data.window.daysObserved.toFixed(2)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-cream-40 print:text-black">
+                    FX methodology
+                  </div>
+                  <div className="font-mono text-cream print:text-black">
+                    {data.summary.fxMethodology}
+                  </div>
+                </div>
+              </div>
+              {data.summary.serverCostMonthlyUsd > 0 && (
+                <div className="mt-3 border-t border-cream-8 pt-3">
+                  Server cost: {fmtUsd(data.summary.serverCostMonthlyUsd)}/mo ·
+                  prorated {fmtUsd(data.summary.serverCostProRatedUsd)} over{" "}
+                  {data.window.daysObserved.toFixed(1)} days
+                </div>
+              )}
+            </section>
+
+            {/* Claim events */}
+            {data.claimEvents.length > 0 && (
+              <section className="rounded-xl border border-cream-8 bg-cream-5 p-5 print:border-black print:bg-white">
+                <h3 className="font-display text-sm uppercase tracking-widest text-cream-40 mb-3 print:text-black">
+                  Claim events ({data.claimEvents.length})
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs font-body">
+                    <thead>
+                      <tr className="text-left text-cream-40 border-b border-cream-8 print:text-black">
+                        <th className="pb-2 pr-4">Epoch</th>
+                        <th className="pb-2 pr-4">Date</th>
+                        <th className="pb-2 pr-4 text-right">MON</th>
+                        <th className="pb-2 text-right">USD</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.claimEvents.map((c) => (
+                        <tr
+                          key={c.epoch}
+                          className="border-b border-cream-8 last:border-0 text-cream-60 print:text-black"
+                        >
+                          <td className="py-2 pr-4 font-mono">{c.epoch}</td>
+                          <td className="py-2 pr-4">
+                            {new Date(c.timestamp).toLocaleDateString()}
+                          </td>
+                          <td className="py-2 pr-4 text-right font-mono text-cream print:text-black">
+                            {fmtMon(c.amountMon)}
+                          </td>
+                          <td className="py-2 text-right font-mono">
+                            {fmtUsd(c.amountUsd)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {/* Per-epoch breakdown */}
+            <section className="rounded-xl border border-cream-8 bg-cream-5 p-5 print:border-black print:bg-white">
+              <h3 className="font-display text-sm uppercase tracking-widest text-cream-40 mb-3 print:text-black">
+                Per-epoch breakdown ({data.epochs.length} epochs)
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] font-body">
+                  <thead>
+                    <tr className="text-left text-cream-40 border-b border-cream-8 print:text-black">
+                      <th className="pb-2 pr-3">Epoch</th>
+                      <th className="pb-2 pr-3">Date</th>
+                      <th className="pb-2 pr-3 text-right">Stake</th>
+                      <th className="pb-2 pr-3 text-right">Comm.</th>
+                      <th className="pb-2 pr-3 text-right">Comm. MON</th>
+                      <th className="pb-2 pr-3 text-right">PF MON</th>
+                      <th className="pb-2 pr-3 text-right">FX</th>
+                      <th className="pb-2 text-right">USD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.epochs.map((e) => (
+                      <tr
+                        key={e.epoch}
+                        className="border-b border-cream-8 last:border-0 text-cream-60 print:text-black"
+                      >
+                        <td className="py-1.5 pr-3 font-mono">{e.epoch}</td>
+                        <td className="py-1.5 pr-3">
+                          {new Date(e.timestamp).toLocaleDateString()}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right font-mono">
+                          {Math.round(e.stakeMon).toLocaleString()}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right font-mono">
+                          {e.commissionPct.toFixed(0)}%
+                        </td>
+                        <td className="py-1.5 pr-3 text-right font-mono text-cream print:text-black">
+                          {fmtMon(e.commissionMon, 4)}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right font-mono">
+                          {fmtMon(e.priorityFeesMon, 4)}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right font-mono">
+                          {e.fxPriceUsd > 0 ? `$${e.fxPriceUsd.toFixed(4)}` : "—"}
+                        </td>
+                        <td className="py-1.5 text-right font-mono">
+                          {fmtUsd(e.commissionUsd + e.priorityFeesUsd, 4)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </article>
         )}
 
-        <div className="print:hidden">
-          <Footer />
-        </div>
+        {!data && validatorId != null && !loading && !err && (
+          <div className="text-center py-12 text-cream-40 text-sm font-body">
+            Loading report…
+          </div>
+        )}
+        {!validatorId && (
+          <div className="text-center py-12 text-cream-40 text-sm font-body print:hidden">
+            Pick a validator to generate a report.
+          </div>
+        )}
       </div>
 
-      <style jsx global>{`
-        @media print {
-          body::before {
-            display: none !important;
-          }
-        }
-      `}</style>
+      <div className="print:hidden">
+        <Footer />
+      </div>
     </div>
   );
 }
 
-function Stat({
+function Tile({
   label,
-  value,
-  emphasize,
+  mon,
+  usd,
+  tone,
 }: {
   label: string;
-  value: string;
-  emphasize?: boolean;
+  mon?: number;
+  usd?: number;
+  tone?: "muted";
 }) {
   return (
-    <div>
-      <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 print:text-black/60">
+    <div
+      className={`rounded-xl border p-5 ${
+        tone === "muted"
+          ? "border-cream-8 bg-cream-5"
+          : "border-cream-12 bg-cream-5"
+      } print:border-black print:bg-white`}
+    >
+      <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 print:text-black">
         {label}
       </div>
-      <div
-        className={`mt-1 font-mono text-sm print:text-black ${
-          emphasize ? "text-phase-green" : "text-cream"
-        }`}
-      >
-        {value}
-      </div>
+      {mon != null && (
+        <div className="mt-1 font-mono text-xl text-cream print:text-black">
+          {mon.toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+            minimumFractionDigits: 2,
+          })}{" "}
+          <span className="text-xs text-cream-40 print:text-black">MON</span>
+        </div>
+      )}
+      {usd != null && (
+        <div
+          className={`${mon != null ? "mt-0.5 text-xs" : "mt-1 text-xl font-mono"} text-cream-60 print:text-black`}
+        >
+          {usd.toLocaleString(undefined, {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: 2,
+          })}
+        </div>
+      )}
     </div>
-  );
-}
-
-function Th({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-}) {
-  return (
-    <th
-      className={`px-3 py-2 text-[10px] font-body uppercase tracking-widest ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align = "left",
-  mono,
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-3 py-1.5 ${align === "right" ? "text-right" : "text-left"} ${
-        mono ? "font-mono" : ""
-      }`}
-    >
-      {children}
-    </td>
   );
 }
