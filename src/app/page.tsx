@@ -1,13 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+/**
+ * Home page — minimal, search-first.
+ *
+ * Selecting a validator from the search routes directly to /validators/[id]
+ * which is the full dashboard (date range, FX toggle, CSV/PDF export, etc.).
+ * No preview tile here — we don't fork the rendering paths.
+ */
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowRight, ExternalLink } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowRight } from "lucide-react";
 import { AuroraBg } from "@/components/aurora-bg";
 import { FloatingParticles } from "@/components/floating-particles";
 import { Footer } from "@/components/footer";
 import { ValidatorSearch } from "@/components/income/validator-search";
-import { IncomeChart } from "@/components/income/income-chart";
 
 interface ValidatorListItem {
   validatorId: number;
@@ -16,35 +24,6 @@ interface ValidatorListItem {
   stakeMon: number;
   commissionPct: number;
   lastEpoch: number;
-}
-
-interface RealizedIncome {
-  validatorId: number;
-  name: string;
-  firstEpoch: number;
-  lastEpoch: number;
-  daysObserved: number;
-  totalCommissionMon: number;
-  totalCommissionUsd: number;
-  currentUnclaimedMon: number;
-  currentUnclaimedUsd: number;
-  totalClaimedMon: number;
-  totalClaimedUsd: number;
-  monPriceUsd: number;
-}
-
-interface EpochIncome {
-  epoch: number;
-  epochSpan: number;
-  poolRewardsMon: number;
-  commissionMon: number;
-  delegatorRewardsMon: number;
-  poolRewardsUsd: number;
-  commissionUsd: number;
-  stakeMon: number;
-  commissionPct: number;
-  monPriceUsd: number;
-  timestamp: string;
 }
 
 interface NetworkOverview {
@@ -70,37 +49,25 @@ function fmtUsd(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
-function fmtMon(n: number): string {
-  if (!isFinite(n) || n <= 0) return "0";
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toFixed(0);
-}
-
 function fmtPrice(n: number): string {
   if (!isFinite(n) || n <= 0) return "—";
   return `$${n.toFixed(4)}`;
 }
 
-// Text-only explore links — no icons, no AI vibe.
 const EXPLORE_LINKS: Array<{ href: string; label: string; desc: string }> = [
   { href: "/stake", label: "All validators", desc: "Sortable leaderboard" },
   { href: "/network", label: "Network overview", desc: "Aggregate stats" },
   { href: "/compare", label: "Compare", desc: "Side-by-side" },
   { href: "/simulate", label: "Simulate", desc: "Project delegator returns" },
-  { href: "/reports", label: "Reports", desc: "CSV / PDF income" },
   { href: "/mev", label: "MEV", desc: "Priority fee analytics" },
+  { href: "/methodology", label: "Methodology", desc: "How numbers are computed" },
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [validators, setValidators] = useState<ValidatorListItem[]>([]);
-  const [selected, setSelected] = useState<ValidatorListItem | null>(null);
-  const [realized, setRealized] = useState<RealizedIncome | null>(null);
-  const [epochHistory, setEpochHistory] = useState<EpochIncome[]>([]);
   const [overview, setOverview] = useState<NetworkOverview | null>(null);
   const [livePrice, setLivePrice] = useState<LivePrice | null>(null);
-  const [loading, setLoading] = useState(false);
   const [dbReady, setDbReady] = useState(true);
 
   useEffect(() => {
@@ -139,27 +106,11 @@ export default function Home() {
     };
   }, []);
 
-  const fetchValidator = useCallback(async (id: number) => {
-    setLoading(true);
-    try {
-      const [r1, r2] = await Promise.all([
-        fetch(`/api/v1/validators/${id}/realized`).then((r) => r.json()),
-        fetch(`/api/validators/${id}/income?epochs=60`).then((r) => r.json()),
-      ]);
-      if (!r1.error) setRealized(r1);
-      else setRealized(null);
-      setEpochHistory(r2.epochs || []);
-    } catch {
-      setRealized(null);
-      setEpochHistory([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selected) fetchValidator(selected.validatorId);
-  }, [selected, fetchValidator]);
+  // Selecting a validator from the search bar takes you straight to its
+  // full dashboard. No half-baked preview on the home page.
+  function handleSelect(v: ValidatorListItem) {
+    router.push(`/validators/${v.validatorId}`);
+  }
 
   const monPrice = livePrice?.monPriceUsd ?? overview?.monPriceUsd ?? 0;
 
@@ -169,9 +120,9 @@ export default function Home() {
       <FloatingParticles />
 
       <div className="max-w-[1100px] mx-auto">
-        {/* Top bar */}
+        {/* Top bar — title + nav links */}
         <header className="flex items-center justify-between mb-12 opacity-0 animate-fade-in-up">
-          <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <h1 className="font-display text-xl text-cream tracking-[0.04em]">
               Monad Income Tracker
             </h1>
@@ -181,7 +132,7 @@ export default function Home() {
                 {overview.activeValidators} validators · epoch {overview.latestEpoch}
               </span>
             ) : null}
-          </div>
+          </Link>
           <nav className="flex items-center gap-1">
             {[
               { href: "/methodology", label: "Methodology" },
@@ -251,143 +202,44 @@ export default function Home() {
           </div>
         ) : (
           <>
+            {/* Search — pick a validator → routes to its dashboard */}
             <section
-              className="max-w-2xl mx-auto mb-10 opacity-0 animate-fade-in-up"
+              className="max-w-2xl mx-auto mb-4 opacity-0 animate-fade-in-up"
               style={{ animationDelay: "0.16s" }}
             >
               <ValidatorSearch
                 validators={validators}
-                selected={selected}
-                onSelect={setSelected}
+                selected={null}
+                onSelect={handleSelect}
               />
+              <div className="mt-3 text-center text-[11px] font-body text-cream-40">
+                Pick a validator → opens their full dashboard with date range,
+                FX toggle, CSV / PDF export.
+              </div>
             </section>
 
-            {selected && (
-              <section className="mb-12 animate-fade-in">
-                <div className="rounded-2xl border border-cream-12 bg-cream-5 p-6 sm:p-8">
-                  <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
-                    <div>
-                      <div className="flex items-center gap-2.5 mb-1">
-                        <h3 className="font-display text-2xl text-cream tracking-wide">
-                          {selected.name}
-                        </h3>
-                        <span className="text-cream-40 text-xs font-mono px-2 py-0.5 rounded border border-cream-12">
-                          #{selected.validatorId}
-                        </span>
-                      </div>
-                      <a
-                        href={`https://testnet.monadexplorer.com/address/${selected.authAddress}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-cream-40 text-xs font-mono hover:text-cream-60 transition-colors inline-flex items-center gap-1"
-                      >
-                        {selected.authAddress.slice(0, 10)}…
-                        {selected.authAddress.slice(-8)}
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                    <Link
-                      href={`/validators/${selected.validatorId}`}
-                      className="inline-flex items-center gap-1.5 text-xs font-body text-phase-green bg-phase-green/10 border border-phase-green/30 rounded-lg px-3 py-1.5 hover:bg-phase-green/15 transition-colors"
-                    >
-                      Full dashboard
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-
-                  {loading && !realized ? (
-                    <div className="py-12 text-center text-cream-40 text-sm font-body">
-                      Loading lifetime income…
-                    </div>
-                  ) : realized ? (
-                    <>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                        <div className="rounded-xl border border-phase-green/30 bg-phase-green/5 p-5">
-                          <div className="text-[10px] font-body uppercase tracking-widest text-phase-green mb-1.5">
-                            Lifetime commission
-                          </div>
-                          <div className="font-display text-3xl text-cream tracking-wide">
-                            {fmtMon(realized.totalCommissionMon)}
-                            <span className="text-cream-40 text-base font-body ml-1.5">
-                              MON
-                            </span>
-                          </div>
-                          <div className="text-cream-60 text-xs font-mono mt-1">
-                            {fmtUsd(realized.totalCommissionMon * monPrice)} ·{" "}
-                            {realized.daysObserved.toFixed(1)} days
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-cream-12 bg-cream-5 p-5">
-                          <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5">
-                            Already claimed
-                          </div>
-                          <div className="font-display text-2xl text-cream tracking-wide">
-                            {fmtMon(realized.totalClaimedMon)}
-                            <span className="text-cream-40 text-sm font-body ml-1.5">
-                              MON
-                            </span>
-                          </div>
-                          <div className="text-cream-60 text-xs font-mono mt-1">
-                            {fmtUsd(realized.totalClaimedMon * monPrice)}
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-cream-12 bg-cream-5 p-5">
-                          <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5">
-                            Unclaimed (pending)
-                          </div>
-                          <div className="font-display text-2xl text-cream tracking-wide">
-                            {fmtMon(realized.currentUnclaimedMon)}
-                            <span className="text-cream-40 text-sm font-body ml-1.5">
-                              MON
-                            </span>
-                          </div>
-                          <div className="text-cream-60 text-xs font-mono mt-1">
-                            {fmtUsd(realized.currentUnclaimedMon * monPrice)}
-                          </div>
-                        </div>
-                      </div>
-
-                      {epochHistory.length > 0 && (
-                        <div className="rounded-xl border border-cream-8 bg-dark p-4">
-                          <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-2">
-                            Per-epoch commission · last {epochHistory.length}{" "}
-                            epochs
-                          </div>
-                          <IncomeChart data={epochHistory} loading={loading} />
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="py-12 text-center text-cream-40 text-sm font-body">
-                      No realized income data yet for this validator.
-                    </div>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* Explore — text-only, no icons */}
+            {/* Explore */}
             <section
-              className="mb-12 opacity-0 animate-fade-in-up"
+              className="mt-12 mb-12 opacity-0 animate-fade-in-up"
               style={{ animationDelay: "0.24s" }}
             >
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-3 text-center">
                 Explore
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {EXPLORE_LINKS.map(({ href, label, desc }) => (
+                {EXPLORE_LINKS.map((l) => (
                   <Link
-                    key={href}
-                    href={href}
+                    key={l.href}
+                    href={l.href}
                     className="group rounded-lg border border-cream-8 bg-cream-5 px-4 py-3 hover:border-cream-20 hover:bg-cream-8 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-cream text-sm font-body font-medium">
-                          {label}
+                          {l.label}
                         </div>
                         <div className="text-cream-40 text-[11px] font-body truncate">
-                          {desc}
+                          {l.desc}
                         </div>
                       </div>
                       <ArrowRight className="w-3.5 h-3.5 text-cream-20 group-hover:text-cream-60 group-hover:translate-x-0.5 transition-all shrink-0" />
@@ -396,46 +248,11 @@ export default function Home() {
                 ))}
               </div>
             </section>
-
-            {/* Trust footer */}
-            <section
-              className="opacity-0 animate-fade-in-up"
-              style={{ animationDelay: "0.32s" }}
-            >
-              <div className="rounded-xl border border-cream-8 bg-cream-5 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
-                <span className="text-cream-60 text-xs font-body">
-                  Every formula is{" "}
-                  <Link
-                    href="/methodology"
-                    className="text-phase-green hover:underline"
-                  >
-                    auditable
-                  </Link>
-                  . Source on{" "}
-                  <a
-                    href="https://github.com/Devour6/monad-income-tracker"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-phase-green hover:underline"
-                  >
-                    GitHub
-                  </a>
-                  .
-                </span>
-                <Link
-                  href="/sdk"
-                  className="inline-flex items-center gap-1.5 text-xs font-body text-cream-60 hover:text-cream transition-colors"
-                >
-                  Free API
-                  <ArrowRight className="w-3 h-3" />
-                </Link>
-              </div>
-            </section>
           </>
         )}
-      </div>
 
-      <Footer />
+        <Footer />
+      </div>
     </div>
   );
 }
