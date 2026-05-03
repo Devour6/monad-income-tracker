@@ -226,19 +226,15 @@ export async function GET(
 
     for (const s of inWindow) {
       const currUnclaimed = toMon(BigInt(s.unclaimedRewards));
-      let commissionMon = 0;
+      // Per-epoch commission accrued = net change in unclaimed +
+      // anything that was claimed (left the contract). This matches
+      // the lifetime sum: total = sum(commissionMon over all epochs)
+      // = (lastUnclaimed - firstUnclaimed) + sum(claimed).
       let claimedMon = 0;
-      if (currUnclaimed >= prevUnclaimed - 1) {
-        // pure accrual (or noise-level drop within 1 MON tolerance)
-        commissionMon = Math.max(0, currUnclaimed - prevUnclaimed);
-      } else {
-        // Claim detected. Commission earned this epoch =
-        // (drop) + (any growth above zero in curr) — but we don't have
-        // intra-epoch resolution, so attribute the drop as claimed and
-        // currUnclaimed as new accrual.
+      if (currUnclaimed < prevUnclaimed - 1) {
         claimedMon = prevUnclaimed - currUnclaimed;
-        commissionMon = claimedMon + currUnclaimed;
       }
+      const commissionMon = currUnclaimed - prevUnclaimed + claimedMon;
 
       const stakeMon =
         toMon(BigInt(s.stakeWei));
