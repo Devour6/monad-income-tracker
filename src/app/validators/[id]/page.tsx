@@ -443,7 +443,10 @@ export default function ValidatorDashboard() {
                   {fmtMon(data.summary.claimedMon)}
                   <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
                 </div>
-                <div className="font-mono text-cream-60 text-xs mt-1">
+                <div className="font-mono text-cream-60 text-sm mt-1">
+                  {fmtUsd(data.summary.claimedMon * data.summary.livePriceUsd)}
+                </div>
+                <div className="font-mono text-cream-40 text-[11px] mt-0.5">
                   {data.claimEvents.length} claim event{data.claimEvents.length === 1 ? "" : "s"}
                 </div>
               </div>
@@ -456,7 +459,10 @@ export default function ValidatorDashboard() {
                   {fmtMon(data.summary.unclaimedMon)}
                   <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
                 </div>
-                <div className="font-mono text-cream-60 text-xs mt-1">
+                <div className="font-mono text-cream-60 text-sm mt-1">
+                  {fmtUsd(data.summary.unclaimedMon * data.summary.livePriceUsd)}
+                </div>
+                <div className="font-mono text-cream-40 text-[11px] mt-0.5">
                   Sitting in precompile, claimable
                 </div>
               </div>
