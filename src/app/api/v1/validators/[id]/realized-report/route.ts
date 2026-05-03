@@ -91,22 +91,27 @@ export async function GET(
       });
     }
 
-    // Determine window
+    // Determine window. Date → epoch translation uses the LATEST snapshot
+    // as the anchor (its createdAt reflects real chain time, unlike
+    // backfilled rows which all share their backfill timestamp). At
+    // 4.36 epochs/day we project backwards from that anchor.
     let windowFromEpoch = fromEpochParam ? parseInt(fromEpochParam, 10) : null;
     let windowToEpoch = toEpochParam ? parseInt(toEpochParam, 10) : null;
+    const EPOCHS_PER_DAY = 4.36;
+    const MS_PER_DAY = 86_400_000;
     if (fromDate || toDate) {
-      // Translate dates → epochs by snapshot timestamp.
-      if (fromDate) {
-        const t = new Date(fromDate).getTime();
-        const match = allSnaps.find((s) => s.createdAt.getTime() >= t);
-        if (match) windowFromEpoch = windowFromEpoch ?? match.epoch;
+      const anchor = allSnaps[allSnaps.length - 1];
+      const anchorMs = anchor.createdAt.getTime();
+      const dateToEpoch = (iso: string): number => {
+        const t = new Date(iso).getTime();
+        const daysAgo = (anchorMs - t) / MS_PER_DAY;
+        return Math.round(anchor.epoch - daysAgo * EPOCHS_PER_DAY);
+      };
+      if (fromDate && windowFromEpoch == null) {
+        windowFromEpoch = dateToEpoch(fromDate);
       }
-      if (toDate) {
-        const t = new Date(toDate).getTime();
-        const match = [...allSnaps]
-          .reverse()
-          .find((s) => s.createdAt.getTime() <= t);
-        if (match) windowToEpoch = windowToEpoch ?? match.epoch;
+      if (toDate && windowToEpoch == null) {
+        windowToEpoch = dateToEpoch(toDate);
       }
     }
     if (windowFromEpoch == null) windowFromEpoch = allSnaps[0].epoch;
