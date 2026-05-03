@@ -222,7 +222,24 @@ export async function GET(
       amountUsd: number;
     }> = [];
 
-    let prevUnclaimed = baseline ? toMon(BigInt(baseline.unclaimedRewards)) : 0;
+    // Baseline for the per-epoch delta. If we have a snapshot just BEFORE
+    // the window, use that — it's the true prior state. Otherwise (window
+    // starts at the validator's first ever snapshot) anchor at the first
+    // in-window snapshot itself: that row reports zero commission accrual
+    // because we have no earlier reference. Without this, a validator
+    // whose first snapshot already has a non-zero unclaimed balance gets
+    // the entire pre-existing balance counted as fresh accrual, which
+    // overstates lifetime commission massively.
+    let prevUnclaimed: number;
+    let firstWindowEpoch: number | null = null;
+    if (baseline) {
+      prevUnclaimed = toMon(BigInt(baseline.unclaimedRewards));
+    } else if (inWindow.length > 0) {
+      prevUnclaimed = toMon(BigInt(inWindow[0].unclaimedRewards));
+      firstWindowEpoch = inWindow[0].epoch;
+    } else {
+      prevUnclaimed = 0;
+    }
 
     for (const s of inWindow) {
       const currUnclaimed = toMon(BigInt(s.unclaimedRewards));
@@ -234,7 +251,14 @@ export async function GET(
       if (currUnclaimed < prevUnclaimed - 1) {
         claimedMon = prevUnclaimed - currUnclaimed;
       }
-      const commissionMon = currUnclaimed - prevUnclaimed + claimedMon;
+      // Suppress accrual on the very first in-window row when there's no
+      // baseline — we have nothing to subtract from. prevUnclaimed already
+      // equals currUnclaimed in this case, so the delta would be 0 anyway,
+      // but we make it explicit for readers of the per-epoch table.
+      const commissionMon =
+        s.epoch === firstWindowEpoch
+          ? 0
+          : currUnclaimed - prevUnclaimed + claimedMon;
 
       const stakeMon =
         toMon(BigInt(s.stakeWei));
