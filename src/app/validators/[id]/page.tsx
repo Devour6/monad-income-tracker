@@ -80,7 +80,13 @@ interface Report {
     commissionUsd: number;
     priorityFeesUsd: number;
   }>;
-  claimEvents: Array<{ epoch: number; timestamp: string; amountMon: number }>;
+  claimEvents: Array<{
+    epoch: number;
+    timestamp: string;
+    amountMon: number;
+    amountUsd?: number;
+    txHash?: string;
+  }>;
 }
 
 function fmtMon(n: number, dp = 2): string {
@@ -630,23 +636,39 @@ export default function ValidatorDashboard() {
                   </div>
                 </div>
                 <div className="divide-y divide-cream-8">
-                  {[...data.claimEvents].reverse().map((c) => (
-                    <div
-                      key={c.epoch}
-                      className="px-4 sm:px-5 py-2.5 flex items-center justify-between gap-2 text-xs font-body"
-                    >
-                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-phase-green shrink-0" />
-                        <span className="text-cream-60">epoch {c.epoch}</span>
-                        <span className="text-cream-40 truncate">
-                          {fmtDate(c.timestamp)}
-                        </span>
+                  {[...data.claimEvents].reverse().map((c, i) => {
+                    const tx = c.txHash;
+                    return (
+                      <div
+                        key={`${c.epoch}-${tx ?? i}`}
+                        className="px-4 sm:px-5 py-2.5 flex items-center justify-between gap-2 text-xs font-body"
+                      >
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-phase-green shrink-0" />
+                          <span className="text-cream-60">epoch {c.epoch}</span>
+                          <span className="text-cream-40 truncate">
+                            {fmtDate(c.timestamp)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-cream font-mono">
+                            {fmtMonExact(c.amountMon)} MON
+                          </span>
+                          {tx && (
+                            <a
+                              href={`https://monadexplorer.com/tx/${tx}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-cream-40 hover:text-phase-green transition-colors"
+                              title="View transaction on Monad explorer"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
                       </div>
-                      <span className="text-cream font-mono shrink-0">
-                        {fmtMonExact(c.amountMon)} MON
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
