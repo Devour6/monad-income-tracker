@@ -1,0 +1,30 @@
+name: Index ClaimRewards events
+
+# Pings /api/cron/index-claims every 5 minutes. Each run pulls every new
+# ClaimRewards event from the staking precompile (0x...1000) since the last
+# cursor and persists them to the claim_events table. This is the source of
+# truth for validator commission income — every row is a literal on-chain
+# claim transaction.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Hit index-claims endpoint
+        run: |
+          set -euo pipefail
+          URL="https://monad-income-tracker.vercel.app/api/cron/index-claims"
+          AUTH=""
+          if [ -n "${CRON_SECRET:-}" ]; then
+            AUTH="-H \"Authorization: Bearer ${CRON_SECRET}\""
+          fi
+          # shellcheck disable=SC2086
+          eval curl -sS -w '\nHTTP %{http_code}\n' --max-time 90 $AUTH "$URL"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
