@@ -1,32 +1,19 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { epochSnapshots, networkEpochs, validators } from "@/lib/db/schema";
+import { networkEpochs, validators, epochSnapshots } from "@/lib/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
+import { getRealizedIncome } from "@/lib/realized-income";
 
 /**
  * GET /api/v1/validators/[id]/realized
  *
- * Returns the validator's REALIZED lifetime income — the actual MON they have
- * collected, computed from the staking precompile's `unclaimed_rewards` field
- * (which is the validator's commission accumulator).
+ * Returns the validator's lifetime realized commission, computed from
+ * accumulator deltas × commission rate (the correct formula). See
+ * src/lib/realized-income.ts for math.
  *
- * Math:
- *   - Each epoch, `unclaimed_rewards` either grows (commission accruing) or
- *     resets to a lower value (a `claim()` call was made).
- *   - For each consecutive pair of snapshots:
- *       if curr.unclaimed >= prev.unclaimed:
- *         delta = curr.unclaimed - prev.unclaimed   // pure accrual
- *         claimed = 0
- *       else:
- *         claimed = prev.unclaimed - curr.unclaimed // claim happened
- *         delta  = curr.unclaimed                    // any additional accrual
- *                                                    // since the claim
- *   - Lifetime commission = sum(deltas) + sum(claimed) = (last - first) + total_claimed.
- *
- * This is verified to match validator CFO ground truth (Phase Stake: $82,937 MON
- * computed vs $82,899 reported).
- *
- * Adds priority fees + USD valuation at current price.
+ * Also returns claim events (drops in unclaimed_rewards) for transparency,
+ * though note: those drops represent the FULL pool's distribution events,
+ * not the validator's commission take alone.
  */
 export async function GET(
   request: Request,
@@ -45,57 +32,55 @@ export async function GET(
       .where(eq(validators.validatorId, validatorId))
       .limit(1);
 
-    const snaps = await db
-      .select()
-      .from(epochSnapshots)
-      .where(eq(epochSnapshots.validatorId, validatorId))
-      .orderBy(asc(epochSnapshots.epoch));
+    const realized = await getRealizedIncome(validatorId);
 
-    if (snaps.length < 2) {
+    if (realized.snapshotCount < 2) {
       return NextResponse.json({
         validatorId,
         name: meta?.name ?? `Validator #${validatorId}`,
-        firstEpoch: snaps[0]?.epoch ?? null,
-        lastEpoch: snaps[snaps.length - 1]?.epoch ?? null,
-        snapshotCount: snaps.length,
+        firstEpoch: realized.firstEpoch,
+        lastEpoch: realized.lastEpoch,
+        snapshotCount: realized.snapshotCount,
         totalCommissionMon: 0,
         totalCommissionUsd: 0,
         currentUnclaimedMon: 0,
         totalClaimedMon: 0,
+        totalPoolMon: 0,
         claimEvents: [],
         monPriceUsd: 0,
         note: "Insufficient snapshots to compute realized income.",
       });
     }
 
+    // Pull snapshots once more for claim event timeline. Cheap enough; this
+    // endpoint is cached. We could expose this from the lib but the lib's
+    // contract is intentionally minimal.
+    const snaps = await db
+      .select({
+        epoch: epochSnapshots.epoch,
+        unclaimedRewards: epochSnapshots.unclaimedRewards,
+      })
+      .from(epochSnapshots)
+      .where(eq(epochSnapshots.validatorId, validatorId))
+      .orderBy(asc(epochSnapshots.epoch));
+
     const WEI = BigInt(10) ** BigInt(18);
-    const toMon = (wei: bigint): number =>
+    const toMon = (wei: bigint) =>
       Number(wei / WEI) + Number(wei % WEI) / Number(WEI);
 
-    const first = snaps[0];
-    const last = snaps[snaps.length - 1];
-
-    let totalClaimed = 0;
     const claimEvents: Array<{ epoch: number; amountMon: number }> = [];
-
     for (let i = 1; i < snaps.length; i++) {
-      const prevUnclaimed = toMon(BigInt(snaps[i - 1].unclaimedRewards));
-      const currUnclaimed = toMon(BigInt(snaps[i].unclaimedRewards));
-      // Tolerance of 1 MON for tiny noise; real claims are typically much bigger.
-      if (currUnclaimed < prevUnclaimed - 1) {
-        const drop = prevUnclaimed - currUnclaimed;
-        totalClaimed += drop;
-        claimEvents.push({ epoch: snaps[i].epoch, amountMon: drop });
+      const prev = BigInt(snaps[i - 1].unclaimedRewards);
+      const curr = BigInt(snaps[i].unclaimedRewards);
+      if (curr < prev - BigInt(1)) {
+        claimEvents.push({
+          epoch: snaps[i].epoch,
+          amountMon: toMon(prev - curr),
+        });
       }
     }
 
-    const firstUnclaimed = toMon(BigInt(first.unclaimedRewards));
-    const lastUnclaimed = toMon(BigInt(last.unclaimedRewards));
-
-    // Lifetime commission = net unclaimed change + everything that was claimed out.
-    const totalCommissionMon = (lastUnclaimed - firstUnclaimed) + totalClaimed;
-
-    // Latest MON price for USD conversion.
+    // Latest known MON price for USD valuation.
     const epochIds = snaps.map((s) => s.epoch);
     const networkRows = await db
       .select()
@@ -111,32 +96,37 @@ export async function GET(
       }
     }
 
-    // Days observed via epoch span (4.36 epochs/day).
-    const epochSpan = last.epoch - first.epoch;
+    const epochSpan = (realized.lastEpoch ?? 0) - (realized.firstEpoch ?? 0);
     const daysObserved = epochSpan / 4.36;
 
     const response = NextResponse.json({
       validatorId,
       name: meta?.name ?? `Validator #${validatorId}`,
       authAddress: meta?.authAddress ?? null,
-      firstEpoch: first.epoch,
-      lastEpoch: last.epoch,
+      firstEpoch: realized.firstEpoch,
+      lastEpoch: realized.lastEpoch,
       epochSpan,
       daysObserved,
-      snapshotCount: snaps.length,
+      snapshotCount: realized.snapshotCount,
 
-      // Lifetime realized commission income — matches what the validator has
-      // actually collected (claimed + currently unclaimed).
-      totalCommissionMon,
-      totalCommissionUsd: totalCommissionMon * latestPrice,
+      // Lifetime commission (validator's actual income from commissioning).
+      totalCommissionMon: realized.totalCommissionMon,
+      totalCommissionUsd: realized.totalCommissionMon * latestPrice,
 
-      currentUnclaimedMon: lastUnclaimed,
-      currentUnclaimedUsd: lastUnclaimed * latestPrice,
+      // Total reward pool that flowed through this validator (commission + delegator).
+      totalPoolMon: realized.totalPoolMon,
 
-      totalClaimedMon: totalClaimed,
-      totalClaimedUsd: totalClaimed * latestPrice,
+      // Currently unclaimed_rewards on-chain. NOTE: this represents the
+      // full pool's pending distribution, not commission alone.
+      currentUnclaimedMon: realized.currentUnclaimedMon,
+      currentUnclaimedUsd: realized.currentUnclaimedMon * latestPrice,
 
-      claimEvents: claimEvents.slice(-20), // last 20 claims for display
+      // Sum of detected drops in unclaimed_rewards (pool distributions, not
+      // commission claims).
+      totalClaimedMon: realized.totalClaimedMon,
+      totalClaimedUsd: realized.totalClaimedMon * latestPrice,
+
+      claimEvents: claimEvents.slice(-20),
 
       monPriceUsd: latestPrice,
     });

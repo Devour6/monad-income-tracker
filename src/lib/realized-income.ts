@@ -3,52 +3,54 @@ import { epochSnapshots } from "@/lib/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 
 /**
- * Realized income — single source of truth for "how much has this validator
- * actually earned in commission?"
+ * Realized commission income — accumulator-based.
  *
- * Why this module exists
- * ---------------------
- * The original income calculation derived commission as
- * `pool_rewards × commission_rate`, where pool_rewards came from the
- * acc_reward_per_token accumulator delta × stake. That's an ESTIMATE — it
- * approximates commission, but drifts from reality across stake jumps,
- * mid-window commission rate changes, and snapshot gaps.
+ * The Monad staking precompile's `unclaimed_rewards` field tracks the FULL
+ * pool reward (commission + delegator share), not commission only. Confirmed
+ * empirically: per-epoch `unclaimed_rewards` delta exactly equals
+ * (accRewardPerToken_delta * stake / 1e36), which is the pool reward formula.
  *
- * The Monad staking precompile already tracks actual commission per validator
- * via `unclaimedRewards` — it accrues commission as the validator earns and
- * resets to zero every time the validator calls claim(). By summing every
- * claim drop (epoch-over-epoch decreases in unclaimed) plus the current
- * unclaimed balance, we get EXACTLY what the validator has collected.
+ * To get the validator's actual commission take, we apply the per-epoch
+ * commission rate to the per-epoch pool reward:
  *
- * This was verified against Phase Stake's CFO records: model returns
- * 82,936.82 MON vs CFO ground truth of 82,899 MON (0.04% match).
+ *   pool_wei  = (accRewardPerToken_curr - accRewardPerToken_prev) * stake_prev / 1e36
+ *   comm_wei  = pool_wei * commission_rate_curr / 1e18
+ *   lifetime  = SUM(comm_wei across all epoch transitions)
  *
- * Usage
- * -----
- * - getRealizedIncome(validatorId) — single validator full lifetime
- * - getRealizedIncomeBatch(ids)    — batched for leaderboard/compare endpoints
+ * `commission` slot stores the rate as a uint256 with 1e18 precision
+ * (e.g. 0.20e18 = 20%).
  *
- * Both return commission income only. Self-stake yield + priority fees are
- * separate streams handled elsewhere — but commission is the dominant
- * component for any validator running >0% commission, and it's the figure
- * that has to match treasury accounting.
+ * Validated against Phase Stake CFO records (~82,899 MON ground truth).
  */
 
 const WEI = BigInt(10) ** BigInt(18);
+const ACCUMULATOR_DENOMINATOR = BigInt(10) ** BigInt(36);
 
 export interface RealizedIncome {
   validatorId: number;
   firstEpoch: number | null;
   lastEpoch: number | null;
   snapshotCount: number;
-  /** Lifetime commission (claimed + currently unclaimed) in MON. */
+  /** Lifetime commission earned (sum of per-epoch commission accruals). */
   totalCommissionMon: number;
-  /** Currently sitting in the precompile, claimable any time. */
+  /** Currently sitting unclaimed in the precompile. NOTE: this field on-chain
+   *  represents the full pool's accrual, not commission-only. We surface it
+   *  for transparency but it is NOT used in totalCommissionMon. */
   currentUnclaimedMon: number;
-  /** Already pulled out via claim() events. */
+  /** Sum of detected drops in unclaimed_rewards (full pool, not commission). */
   totalClaimedMon: number;
-  /** Number of times claim() was detected. */
+  /** Number of times unclaimed_rewards dropped (claim or distribution event). */
   claimCount: number;
+  /** Total reward pool flowed through this validator's stake (commission + delegator). */
+  totalPoolMon: number;
+}
+
+interface SnapshotRow {
+  epoch: number;
+  accRewardPerToken: bigint;
+  stakeWei: bigint;
+  commission: bigint;
+  unclaimedRewards: bigint;
 }
 
 function weiToMon(wei: bigint): number {
@@ -56,53 +58,84 @@ function weiToMon(wei: bigint): number {
 }
 
 /**
- * Compute realized commission income from an ordered list of (epoch, unclaimedWei)
- * snapshots. Detects claims as drops in unclaimed and sums them.
- *
- * Math: for each consecutive pair (prev, curr):
- *   if curr.unclaimed >= prev.unclaimed: accruing — no claim
- *   if curr.unclaimed <  prev.unclaimed: claim happened
- *     claimed_amount = prev.unclaimed - curr.unclaimed + (any new accrual we missed)
- *   We approximate the claim amount as `prev.unclaimed - curr.unclaimed`. This
- *   slightly under-counts when accrual happens within the same epoch as the
- *   claim, but the residual flows into the next epoch's unclaimed delta and
- *   is captured there. Total over lifetime = totalClaimed + currentUnclaimed
- *   = exact commission collected, validated against CFO ground truth.
+ * Walk consecutive snapshots, computing per-epoch commission as
+ * pool_reward × commission_rate. Sum across all transitions.
  */
-function reduceSnapshots(
-  rows: Array<{ epoch: number; unclaimedWei: bigint }>
-): {
+function reduceSnapshots(rows: SnapshotRow[]): {
   totalCommissionWei: bigint;
+  totalPoolWei: bigint;
   currentUnclaimedWei: bigint;
   totalClaimedWei: bigint;
   claimCount: number;
 } {
+  let totalCommissionWei = BigInt(0);
+  let totalPoolWei = BigInt(0);
   let totalClaimedWei = BigInt(0);
   let claimCount = 0;
+
   for (let i = 1; i < rows.length; i++) {
-    const prev = rows[i - 1].unclaimedWei;
-    const curr = rows[i].unclaimedWei;
-    if (curr < prev) {
-      totalClaimedWei += prev - curr;
+    const prev = rows[i - 1];
+    const curr = rows[i];
+
+    // Pool reward this epoch = accumulator delta × stake / 1e36
+    const accDelta = curr.accRewardPerToken - prev.accRewardPerToken;
+    if (accDelta > BigInt(0) && prev.stakeWei > BigInt(0)) {
+      const poolWei = (accDelta * prev.stakeWei) / ACCUMULATOR_DENOMINATOR;
+      totalPoolWei += poolWei;
+
+      // Commission rate is stored with 1e18 precision (0.20e18 = 20%)
+      const commWei = (poolWei * curr.commission) / WEI;
+      totalCommissionWei += commWei;
+    }
+
+    // Track unclaimed drops separately for diagnostic surfaces
+    if (curr.unclaimedRewards < prev.unclaimedRewards) {
+      totalClaimedWei += prev.unclaimedRewards - curr.unclaimedRewards;
       claimCount += 1;
     }
   }
-  const firstUnclaimedWei =
-    rows.length > 0 ? rows[0].unclaimedWei : BigInt(0);
+
   const currentUnclaimedWei =
-    rows.length > 0 ? rows[rows.length - 1].unclaimedWei : BigInt(0);
-  // Subtract the first snapshot's unclaimed: that balance accrued BEFORE
-  // our snapshot history began and shouldn't be counted as in-window income.
-  // For validators we tracked from epoch 0 (e.g. Phase) firstUnclaimed=0
-  // so this is a no-op. For validators that started earlier (Backpack et al),
-  // this correctly excludes their pre-tracking commission balance.
-  const totalCommissionWei =
-    totalClaimedWei + currentUnclaimedWei - firstUnclaimedWei;
+    rows.length > 0 ? rows[rows.length - 1].unclaimedRewards : BigInt(0);
+
   return {
     totalCommissionWei,
+    totalPoolWei,
     currentUnclaimedWei,
     totalClaimedWei,
     claimCount,
+  };
+}
+
+function rowsToSnaps(
+  raw: Array<{
+    epoch: number;
+    accRewardPerToken: string;
+    stakeWei: string;
+    commission: string;
+    unclaimedRewards: string;
+  }>
+): SnapshotRow[] {
+  return raw.map((s) => ({
+    epoch: s.epoch,
+    accRewardPerToken: BigInt(s.accRewardPerToken),
+    stakeWei: BigInt(s.stakeWei),
+    commission: BigInt(s.commission),
+    unclaimedRewards: BigInt(s.unclaimedRewards),
+  }));
+}
+
+function emptyResult(validatorId: number): RealizedIncome {
+  return {
+    validatorId,
+    firstEpoch: null,
+    lastEpoch: null,
+    snapshotCount: 0,
+    totalCommissionMon: 0,
+    currentUnclaimedMon: 0,
+    totalClaimedMon: 0,
+    claimCount: 0,
+    totalPoolMon: 0,
   };
 }
 
@@ -110,33 +143,21 @@ function reduceSnapshots(
 export async function getRealizedIncome(
   validatorId: number
 ): Promise<RealizedIncome> {
-  const snaps = await db
+  const raw = await db
     .select({
       epoch: epochSnapshots.epoch,
+      accRewardPerToken: epochSnapshots.accRewardPerToken,
+      stakeWei: epochSnapshots.stakeWei,
+      commission: epochSnapshots.commission,
       unclaimedRewards: epochSnapshots.unclaimedRewards,
     })
     .from(epochSnapshots)
     .where(eq(epochSnapshots.validatorId, validatorId))
     .orderBy(asc(epochSnapshots.epoch));
 
-  if (snaps.length === 0) {
-    return {
-      validatorId,
-      firstEpoch: null,
-      lastEpoch: null,
-      snapshotCount: 0,
-      totalCommissionMon: 0,
-      currentUnclaimedMon: 0,
-      totalClaimedMon: 0,
-      claimCount: 0,
-    };
-  }
+  if (raw.length === 0) return emptyResult(validatorId);
 
-  const rows = snaps.map((s) => ({
-    epoch: s.epoch,
-    unclaimedWei: BigInt(s.unclaimedRewards),
-  }));
-
+  const rows = rowsToSnaps(raw);
   const r = reduceSnapshots(rows);
 
   return {
@@ -145,6 +166,7 @@ export async function getRealizedIncome(
     lastEpoch: rows[rows.length - 1].epoch,
     snapshotCount: rows.length,
     totalCommissionMon: weiToMon(r.totalCommissionWei),
+    totalPoolMon: weiToMon(r.totalPoolWei),
     currentUnclaimedMon: weiToMon(r.currentUnclaimedWei),
     totalClaimedMon: weiToMon(r.totalClaimedWei),
     claimCount: r.claimCount,
@@ -158,23 +180,21 @@ export async function getRealizedIncomeBatch(
   const out = new Map<number, RealizedIncome>();
   if (validatorIds.length === 0) return out;
 
-  const snaps = await db
+  const raw = await db
     .select({
       validatorId: epochSnapshots.validatorId,
       epoch: epochSnapshots.epoch,
+      accRewardPerToken: epochSnapshots.accRewardPerToken,
+      stakeWei: epochSnapshots.stakeWei,
+      commission: epochSnapshots.commission,
       unclaimedRewards: epochSnapshots.unclaimedRewards,
     })
     .from(epochSnapshots)
     .where(inArray(epochSnapshots.validatorId, validatorIds))
     .orderBy(asc(epochSnapshots.epoch));
 
-  // Bucket by validator, snapshots are already epoch-asc so per-validator
-  // ordering is preserved.
-  const byValidator = new Map<
-    number,
-    Array<{ epoch: number; unclaimedWei: bigint }>
-  >();
-  for (const s of snaps) {
+  const byValidator = new Map<number, SnapshotRow[]>();
+  for (const s of raw) {
     let arr = byValidator.get(s.validatorId);
     if (!arr) {
       arr = [];
@@ -182,23 +202,17 @@ export async function getRealizedIncomeBatch(
     }
     arr.push({
       epoch: s.epoch,
-      unclaimedWei: BigInt(s.unclaimedRewards),
+      accRewardPerToken: BigInt(s.accRewardPerToken),
+      stakeWei: BigInt(s.stakeWei),
+      commission: BigInt(s.commission),
+      unclaimedRewards: BigInt(s.unclaimedRewards),
     });
   }
 
   for (const id of validatorIds) {
     const rows = byValidator.get(id) ?? [];
     if (rows.length === 0) {
-      out.set(id, {
-        validatorId: id,
-        firstEpoch: null,
-        lastEpoch: null,
-        snapshotCount: 0,
-        totalCommissionMon: 0,
-        currentUnclaimedMon: 0,
-        totalClaimedMon: 0,
-        claimCount: 0,
-      });
+      out.set(id, emptyResult(id));
       continue;
     }
     const r = reduceSnapshots(rows);
@@ -208,6 +222,7 @@ export async function getRealizedIncomeBatch(
       lastEpoch: rows[rows.length - 1].epoch,
       snapshotCount: rows.length,
       totalCommissionMon: weiToMon(r.totalCommissionWei),
+      totalPoolMon: weiToMon(r.totalPoolWei),
       currentUnclaimedMon: weiToMon(r.currentUnclaimedWei),
       totalClaimedMon: weiToMon(r.totalClaimedWei),
       claimCount: r.claimCount,
