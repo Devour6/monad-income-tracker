@@ -216,7 +216,7 @@ export async function indexClaimEvents(
       const fromHex = "0x" + cursor.toString(16);
       const toHex = "0x" + chunkEnd.toString(16);
 
-      const logs = await rpc<RawLog[]>("eth_getLogs", [
+      const logsRaw = await rpc<RawLog[] | null>("eth_getLogs", [
         {
           address: STAKING_CONTRACT,
           fromBlock: fromHex,
@@ -225,6 +225,10 @@ export async function indexClaimEvents(
         },
       ]);
       rpcCalls += 1;
+      // Defensive: malformed RPC responses sometimes come back as null/undefined.
+      // Treat as "no logs in this chunk" rather than throwing — otherwise the
+      // outer catch advances the cursor past unscanned blocks.
+      const logs: RawLog[] = Array.isArray(logsRaw) ? logsRaw : [];
       logsFound += logs.length;
 
       if (logs.length > 0) {
@@ -292,9 +296,12 @@ export async function indexClaimEvents(
       await sleep(INTER_CALL_DELAY_MS);
     }
 
-    // Cursor advance — to wherever we actually got to.
+    // Cursor advance — to wherever we actually got to. Explicit-range mode
+    // (caller provided BOTH fromBlock + toBlock) does NOT mutate the cursor,
+    // so historical backfills can't clobber the live cron's resume point.
+    const explicitRange = opts.fromBlock != null && opts.toBlock != null;
     const advancedTo = cursor - BigInt(1);
-    if (advancedTo >= startBlock) {
+    if (!explicitRange && advancedTo >= startBlock) {
       await setCursor(advancedTo);
     }
 
