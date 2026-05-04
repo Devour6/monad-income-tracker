@@ -253,19 +253,47 @@ export async function GET(
     }
 
     // ── Per-epoch table — every snapshot epoch in window gets a row ──
+    //
+    // Each row reports what was actually earned that epoch on-chain,
+    // independent of whether the validator has claimed:
+    //
+    //   poolEarnedMon   = (currUnclaimed - prevUnclaimed) + claimedThisEpoch
+    //                     = the pool's on-chain reward growth that epoch.
+    //                     This is what the validator's stake POOL earned —
+    //                     commission + delegator share combined.
+    //
+    //   validatorShareMon = poolEarnedMon × (selfStakeWei / totalStakeWei)
+    //                     = the validator auth address's pro-rata slice.
+    //                     This is the on-chain economic claim the auth
+    //                     address has on this epoch's earnings.
+    //
+    //   claimedMon      = sum of ClaimRewards events fired in this epoch
+    //                     by the auth address. 0 for non-claim epochs.
+    //
+    // No projection. No rate × stake math. Pure snapshot deltas + event sums.
     interface EpochRow {
       epoch: number;
       timestamp: string;
       stakeMon: number;
+      selfStakeMon: number;
       commissionPct: number;
       unclaimedMon: number;
-      commissionMon: number; // accrual this epoch
-      claimedMon: number; // amount claimed in this epoch (if any)
+      // Whole-pool reward earned on-chain this epoch (commission + delegator).
+      poolEarnedMon: number;
+      // Validator's pro-rata slice = poolEarned × (self_stake / total_stake).
+      validatorShareMon: number;
+      // ClaimRewards event amount fired by auth address this epoch.
+      claimedMon: number;
       priorityFeesMon: number;
       priorityFeeBlocks: number;
       fxPriceUsd: number;
-      commissionUsd: number;
+      // USD valuation of the validator's share at the epoch's FX price.
+      validatorShareUsd: number;
       priorityFeesUsd: number;
+      // Legacy alias kept for backward compat with older clients/CSVs.
+      // Equals validatorShareMon.
+      commissionMon: number;
+      commissionUsd: number;
     }
 
     const epochsArray: EpochRow[] = [];
@@ -292,42 +320,61 @@ export async function GET(
       const epochClaims = claimsByEpoch.get(s.epoch);
       const claimedMon = epochClaims ? toMon(epochClaims.totalWei) : 0;
 
-      // Per-epoch commission accrual.
-      // For the first row when we have no baseline, suppress accrual
-      // (we'd be subtracting from nothing; the row reports 0 and
-      // subsequent rows pick up the sequence correctly).
-      const commissionMon =
+      // Pool-wide earnings this epoch = unclaimed delta + amount that left
+      // via claim events. For the first row when we have no baseline,
+      // suppress accrual (we'd be subtracting from nothing; the row reports
+      // 0 and subsequent rows pick up the sequence correctly).
+      const poolEarnedMon =
         s.epoch === firstWindowEpoch
           ? 0
           : currUnclaimed - prevUnclaimed + claimedMon;
 
-      const stakeMon = toMon(BigInt(s.stakeWei));
+      const stakeWei = BigInt(s.stakeWei);
+      const selfStakeWei = s.selfStakeWei
+        ? BigInt(s.selfStakeWei)
+        : BigInt(0);
+      const stakeMon = toMon(stakeWei);
+      const selfStakeMon = toMon(selfStakeWei);
+
+      // Validator's pro-rata slice of this epoch's pool earnings.
+      // If we don't have self-stake data (legacy snapshots), fall back to
+      // the whole pool growth so the column isn't blank.
+      const validatorShareMon =
+        stakeWei > BigInt(0) && selfStakeWei > BigInt(0)
+          ? poolEarnedMon * (Number(selfStakeWei) / Number(stakeWei) || 0)
+          : poolEarnedMon;
+
       const commissionPctRaw = Number(BigInt(s.commission)) / 1e18;
       const pf = pfMap.get(s.epoch);
       const priorityFeesMon = pf?.feesMon ?? 0;
       const priorityFeeBlocks = pf?.blocks ?? 0;
       const fxPrice = fxFor(s.epoch);
-      const commissionUsd = commissionMon * fxPrice;
+      const validatorShareUsd = validatorShareMon * fxPrice;
       const priorityFeesUsd = priorityFeesMon * fxPrice;
 
       epochsArray.push({
         epoch: s.epoch,
         timestamp: s.createdAt.toISOString(),
         stakeMon,
+        selfStakeMon,
         commissionPct: commissionPctRaw * 100,
         unclaimedMon: currUnclaimed,
-        commissionMon,
+        poolEarnedMon,
+        validatorShareMon,
         claimedMon,
         priorityFeesMon,
         priorityFeeBlocks,
         fxPriceUsd: fxPrice,
-        commissionUsd,
+        validatorShareUsd,
         priorityFeesUsd,
+        // Legacy aliases.
+        commissionMon: validatorShareMon,
+        commissionUsd: validatorShareUsd,
       });
 
-      summaryCommissionMon += commissionMon;
+      summaryCommissionMon += validatorShareMon;
       summaryClaimedMon += claimedMon;
-      summaryCommissionUsd += commissionUsd;
+      summaryCommissionUsd += validatorShareUsd;
       summaryPriorityFeesMon += priorityFeesMon;
       summaryPriorityFeesUsd += priorityFeesUsd;
 
@@ -370,21 +417,28 @@ export async function GET(
     const poolUnclaimedMon = toMon(poolUnclaimedWei);
     const poolUnclaimedUsd = poolUnclaimedMon * livePrice;
 
-    // Lifetime income = literal sum of on-chain ClaimRewards events the
-    // auth address has signed. Plus priority fees for the window.
-    // No pool decomposition. No projection. Auditable.
-    const totalIncomeMon = summaryClaimedMon + summaryPriorityFeesMon;
-    const totalIncomeUsd =
-      summaryClaimedMon * livePrice + summaryPriorityFeesUsd;
+    // Lifetime income = sum of per-epoch validator-share earnings + priority
+    // fees over the window. validatorShareMon per epoch is derived from the
+    // on-chain unclaimed_rewards delta + claim events times the auth
+    // address's pro-rata stake, so it counts what was earned in each epoch
+    // regardless of whether it's been claimed yet.
+    //
+    // claimedMon stays as the literal sum of ClaimRewards events for
+    // auditability — it shows what's been withdrawn to the wallet so far.
+    const totalIncomeMon = summaryCommissionMon + summaryPriorityFeesMon;
+    const totalIncomeUsd = summaryCommissionUsd + summaryPriorityFeesUsd;
     const netUsd = totalIncomeUsd - serverCostProRatedUsd;
 
     const summary = {
       claimCount: claimRows.length,
-      // Headline commission = total claimed (every wei is on-chain).
-      commissionMon: summaryClaimedMon,
-      commissionUsd: summaryClaimedMon * livePrice,
+      // Lifetime earnings = sum of per-epoch validator pro-rata shares.
+      // Counts on-chain pool growth during this window, regardless of claims.
+      commissionMon: summaryCommissionMon,
+      commissionUsd: summaryCommissionUsd,
       priorityFeesMon: summaryPriorityFeesMon,
       priorityFeesUsd: summaryPriorityFeesUsd,
+      // What the auth address has actually withdrawn on-chain (subset of
+      // commissionMon — earnings that have reached the wallet).
       claimedMon: summaryClaimedMon,
       claimedUsd: summaryClaimedMon * livePrice,
       // Pool pending — informational, NOT counted as validator income.
@@ -425,14 +479,16 @@ export async function GET(
           "epoch",
           "timestamp",
           "stake_mon",
+          "self_stake_mon",
           "commission_pct",
           "unclaimed_mon",
-          "commission_mon",
+          "pool_earned_mon",
+          "validator_share_mon",
+          "validator_share_usd",
           "claimed_mon",
           "priority_fees_mon",
           "priority_fee_blocks",
           "fx_price_usd",
-          "commission_usd",
           "priority_fees_usd",
         ].join(",")
       );
@@ -442,14 +498,16 @@ export async function GET(
             e.epoch,
             e.timestamp,
             e.stakeMon,
+            e.selfStakeMon,
             e.commissionPct.toFixed(2),
             e.unclaimedMon,
-            e.commissionMon,
+            e.poolEarnedMon,
+            e.validatorShareMon,
+            e.validatorShareUsd,
             e.claimedMon,
             e.priorityFeesMon,
             e.priorityFeeBlocks,
             e.fxPriceUsd,
-            e.commissionUsd,
             e.priorityFeesUsd,
           ].join(",")
         );

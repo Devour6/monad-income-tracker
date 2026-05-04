@@ -70,15 +70,22 @@ interface Report {
     epoch: number;
     timestamp: string;
     stakeMon: number;
+    selfStakeMon: number;
     commissionPct: number;
     unclaimedMon: number;
-    commissionMon: number;
+    // Pool-wide reward earned on-chain this epoch (commission + delegator).
+    poolEarnedMon: number;
+    // Validator's pro-rata slice of poolEarnedMon.
+    validatorShareMon: number;
+    validatorShareUsd: number;
     claimedMon: number;
     priorityFeesMon: number;
     priorityFeeBlocks: number;
     fxPriceUsd: number;
-    commissionUsd: number;
     priorityFeesUsd: number;
+    // Legacy aliases (= validatorShareMon / validatorShareUsd).
+    commissionMon: number;
+    commissionUsd: number;
   }>;
   claimEvents: Array<{
     epoch: number;
@@ -206,9 +213,11 @@ export default function ValidatorDashboard() {
 
   const chartData = useMemo(() => {
     if (!data) return [];
+    // Plot validator's pro-rata share of pool earnings + priority fees
+    // per epoch. Both are direct from on-chain state — no projection.
     return data.epochs.slice(-90).map((e) => ({
       epoch: e.epoch,
-      commission: e.commissionMon,
+      yourShare: e.validatorShareMon,
       priorityFees: e.priorityFeesMon,
     }));
   }, [data]);
@@ -424,19 +433,24 @@ export default function ValidatorDashboard() {
           </div>
         ) : data ? (
           <>
-            {/* Headline tiles — claimed is the truth (every wei is on-chain) */}
+            {/* Headline tiles — earned per epoch is the truth (on-chain pool
+                growth × validator pro-rata, summed over the window). Claimed
+                is shown as a sub-stat: how much of that has been withdrawn. */}
             <section className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-              <div className="rounded-xl border border-phase-green/30 bg-phase-green/5 p-4 sm:p-5">
+              <div
+                className="rounded-xl border border-phase-green/30 bg-phase-green/5 p-4 sm:p-5"
+                title="Sum of per-epoch on-chain pool growth × your auth address's pro-rata share, plus priority fees. Earned regardless of whether you've claimed."
+              >
                 <div className="text-[10px] font-body uppercase tracking-widest text-phase-green mb-1.5 inline-flex items-center gap-1.5">
                   <CheckCircle2 className="w-3 h-3 text-phase-green" />
-                  Lifetime claimed
+                  Lifetime earned
                 </div>
                 <div className="font-display text-2xl sm:text-3xl text-cream tracking-wide print:text-black">
-                  {fmtMon(data.summary.claimedMon)}
+                  {fmtMon(data.summary.totalIncomeMon)}
                   <span className="text-cream-40 text-base font-body ml-1.5">MON</span>
                 </div>
                 <div className="font-mono text-cream-60 text-sm mt-1">
-                  {fmtUsd(data.summary.claimedMon * data.summary.livePriceUsd)}
+                  {fmtUsd(data.summary.totalIncomeUsd)}
                   {serverCostUsd > 0 && (
                     <span className="text-cream-40 ml-2">
                       · net {fmtUsd(data.summary.netUsd)}
@@ -444,7 +458,8 @@ export default function ValidatorDashboard() {
                   )}
                 </div>
                 <div className="font-mono text-cream-40 text-[11px] mt-0.5">
-                  {data.claimEvents.length} on-chain claim
+                  {fmtMon(data.summary.claimedMon)} MON withdrawn ·{" "}
+                  {data.claimEvents.length} claim
                   {data.claimEvents.length === 1 ? "" : "s"}
                 </div>
               </div>
@@ -548,7 +563,7 @@ export default function ValidatorDashboard() {
                       }}
                       labelStyle={{ color: "rgba(243, 238, 217, 0.6)" }}
                     />
-                    <Bar dataKey="commission" fill="#4ade80" name="Commission" />
+                    <Bar dataKey="yourShare" fill="#4ade80" name="Your share" />
                     <Bar dataKey="priorityFees" fill="#facc15" name="Priority fees" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -566,15 +581,24 @@ export default function ValidatorDashboard() {
                   {data.epochs.length} epochs
                 </div>
               </div>
+              <div className="px-4 sm:px-5 py-2 border-b border-cream-12 bg-cream-5/50 text-[10px] font-body text-cream-40 leading-relaxed">
+                <strong className="text-cream-60">Pool earned</strong> = the
+                whole stake pool&apos;s on-chain reward growth that epoch
+                (commission + delegator share, derived from the precompile&apos;s
+                unclaimed_rewards delta + claim events). <strong className="text-cream-60">Your share</strong>{" "}
+                = pro-rata slice your auth address owns based on self-stake.
+                Both numbers are direct from on-chain state — earned regardless
+                of claims.
+              </div>
               <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-                <table className="w-full text-xs font-body min-w-[640px]">
+                <table className="w-full text-xs font-body min-w-[760px]">
                   <thead className="bg-cream-5 sticky top-0 z-10">
                     <tr className="text-cream-40 text-[10px] uppercase tracking-widest">
                       <th className="text-left px-3 sm:px-4 py-2 font-body">Epoch</th>
                       <th className="hidden sm:table-cell text-left px-4 py-2 font-body">Date</th>
                       <th className="text-right px-3 sm:px-4 py-2 font-body">Stake</th>
-                      <th className="text-right px-3 sm:px-4 py-2 font-body">Comm %</th>
-                      <th className="text-right px-3 sm:px-4 py-2 font-body">Comm</th>
+                      <th className="text-right px-3 sm:px-4 py-2 font-body">Pool earned</th>
+                      <th className="text-right px-3 sm:px-4 py-2 font-body">Your share</th>
                       <th className="hidden sm:table-cell text-right px-4 py-2 font-body">Pri Fees</th>
                       <th className="hidden sm:table-cell text-right px-4 py-2 font-body">$/MON</th>
                       <th className="text-right px-3 sm:px-4 py-2 font-body">USD</th>
@@ -596,14 +620,18 @@ export default function ValidatorDashboard() {
                           <td className="hidden sm:table-cell px-4 py-2 text-cream-60">
                             {fmtDateShort(e.timestamp)}
                           </td>
-                          <td className="px-3 sm:px-4 py-2 text-right text-cream font-mono">
+                          <td className="px-3 sm:px-4 py-2 text-right text-cream-60 font-mono">
                             {fmtMon(e.stakeMon)}
                           </td>
                           <td className="px-3 sm:px-4 py-2 text-right text-cream-60 font-mono">
-                            {e.commissionPct}%
+                            {e.poolEarnedMon > 0
+                              ? fmtMonExact(e.poolEarnedMon)
+                              : "—"}
                           </td>
                           <td className="px-3 sm:px-4 py-2 text-right text-cream font-mono">
-                            {fmtMonExact(e.commissionMon)}
+                            {e.validatorShareMon > 0
+                              ? fmtMonExact(e.validatorShareMon)
+                              : "—"}
                           </td>
                           <td className="hidden sm:table-cell px-4 py-2 text-right text-cream-60 font-mono">
                             {e.priorityFeesMon > 0
@@ -614,7 +642,7 @@ export default function ValidatorDashboard() {
                             ${e.fxPriceUsd.toFixed(4)}
                           </td>
                           <td className="px-3 sm:px-4 py-2 text-right text-cream font-mono">
-                            {fmtUsd(e.commissionUsd + e.priorityFeesUsd)}
+                            {fmtUsd(e.validatorShareUsd + e.priorityFeesUsd)}
                           </td>
                           <td className="px-2 sm:px-3 py-2 text-center">
                             {e.claimedMon > 0 ? (
