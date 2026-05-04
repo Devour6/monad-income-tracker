@@ -86,31 +86,52 @@ async function insertLogs(logs, blockTsCache) {
       await new Promise(r => setTimeout(r, RPC_DELAY_MS));
     }
   }
-  let inserted = 0;
+  // Build rows array
+  const rows = [];
   for (const l of logs) {
     if (l.removed || !l.topics || l.topics.length < 3) continue;
-    const validator_id = topicToValidatorId(l.topics[1]);
-    const delegator = topicToAddress(l.topics[2]);
-    const { amountWei, epoch } = decodeAmountAndEpoch(l.data);
     const tsSeconds = l.blockTimestamp
       ? Number(BigInt(l.blockTimestamp))
       : blockTsCache.get(l.blockNumber);
-    try {
-      await sql`
-        INSERT INTO claim_events
-          (validator_id, delegator, amount_wei, epoch, block_number, block_timestamp, tx_hash, log_index)
-        VALUES
-          (${validator_id}, ${delegator}, ${amountWei.toString()}, ${epoch},
-           ${BigInt(l.blockNumber).toString()}, ${new Date((tsSeconds ?? 0) * 1000).toISOString()},
-           ${l.transactionHash}, ${Number(BigInt(l.logIndex))})
-        ON CONFLICT (tx_hash, log_index) DO NOTHING
-      `;
-      inserted += 1;
-    } catch (e) {
-      console.error(`  insert err ${l.transactionHash}:`, e.message);
-    }
+    const { amountWei, epoch } = decodeAmountAndEpoch(l.data);
+    rows.push({
+      validator_id: topicToValidatorId(l.topics[1]),
+      delegator: topicToAddress(l.topics[2]),
+      amount_wei: amountWei.toString(),
+      epoch,
+      block_number: BigInt(l.blockNumber).toString(),
+      block_timestamp: new Date((tsSeconds ?? 0) * 1000).toISOString(),
+      tx_hash: l.transactionHash,
+      log_index: Number(BigInt(l.logIndex)),
+    });
   }
-  return inserted;
+  if (rows.length === 0) return 0;
+  // Batched multi-VALUES insert. Build the SQL manually since neon's
+  // tagged-template doesn't natively expand arrays of rows.
+  const valuesSql = rows
+    .map((r, i) => {
+      const o = i * 8;
+      return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8})`;
+    })
+    .join(', ');
+  const params = [];
+  for (const r of rows) {
+    params.push(
+      r.validator_id, r.delegator, r.amount_wei, r.epoch,
+      r.block_number, r.block_timestamp, r.tx_hash, r.log_index,
+    );
+  }
+  const stmt = `INSERT INTO claim_events
+    (validator_id, delegator, amount_wei, epoch, block_number, block_timestamp, tx_hash, log_index)
+    VALUES ${valuesSql}
+    ON CONFLICT (tx_hash, log_index) DO NOTHING`;
+  try {
+    await sql(stmt, params);
+    return rows.length;
+  } catch (e) {
+    console.error(`  batch insert err (${rows.length} rows):`, e.message);
+    return 0;
+  }
 }
 
 async function processChunk(start, end, blockTsCache) {
