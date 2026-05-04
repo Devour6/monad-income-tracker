@@ -89,7 +89,7 @@ const EXPLORE_GROUPS: Array<{
     ],
   },
   {
-    label: "Explore on-chain income",
+    label: "Explore additional tools",
     links: [
       { href: "/stake", label: "All validators", desc: "Sortable leaderboard" },
       { href: "/network", label: "Network overview", desc: "Aggregate stats" },
