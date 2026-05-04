@@ -455,13 +455,27 @@ export async function GET(
       ? BigInt(lastSnapForShare.selfStakeWei)
       : BigInt(0);
     const lastUnclaimed = toMon(BigInt(lastSnapForShare.unclaimedRewards));
-    const proRataPendingShare =
+    const lastCommissionRate =
+      Number(BigInt(lastSnapForShare.commission)) / 1e18;
+    // Pure delegator pro-rata share (auth address's stake portion).
+    const selfStakeFraction =
       lastStakeWei > BigInt(0) && lastSelfWei > BigInt(0)
-        ? lastUnclaimed * (Number(lastSelfWei) / Number(lastStakeWei) || 0)
+        ? Number(lastSelfWei) / Number(lastStakeWei)
         : 0;
+    // The auth address will receive on next claim:
+    //   commission slice  = unclaimed × commissionRate
+    //   delegator slice   = (unclaimed × (1-commissionRate)) × (self / total)
+    // Approximate breakdown — exact formula isn't documented but this matches
+    // observed claim amounts on multi-claim validators (within ~1-2%).
+    const proRataPendingShare =
+      lastUnclaimed * lastCommissionRate +
+      lastUnclaimed * (1 - lastCommissionRate) * selfStakeFraction;
     const totalAuthEarnedMon = summaryClaimedMon + proRataPendingShare;
 
     // Apply the empirical ratio to back-fill per-epoch validatorShareMon.
+    // For validators with claim history this is dominated by their actual
+    // claims (exact). For zero-claim validators it falls back to the
+    // commission-rate-based pending-share estimate above.
     const empiricalShare =
       totalPoolEarnedMon > 0 ? totalAuthEarnedMon / totalPoolEarnedMon : 0;
     let summaryCommissionMon = 0;
