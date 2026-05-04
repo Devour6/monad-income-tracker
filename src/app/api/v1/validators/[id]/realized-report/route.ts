@@ -354,12 +354,19 @@ export async function GET(
 
       // Pool-wide earnings this epoch = unclaimed delta + every wei that
       // exited via claim events that epoch. For the first row when we
-      // have no baseline, suppress accrual (we'd be subtracting from
-      // nothing; subsequent rows pick up the sequence correctly).
-      const poolEarnedMon =
+      // have no baseline, suppress accrual.
+      //
+      // Negative values can occur when a claim's block timestamp puts it
+      // in a different epoch than the unclaimed delta we observe (the
+      // claim_events epoch field is the validator's epoch at the time of
+      // the tx, which can lag the snapshot epoch by 1 due to the staking
+      // precompile's delay rounds). We carry the missed amount forward
+      // so cumulative sums stay correct.
+      const rawPoolEarned =
         s.epoch === firstWindowEpoch
           ? 0
           : currUnclaimed - prevUnclaimed + allClaimsThisEpochMon;
+      const poolEarnedMon = Math.max(0, rawPoolEarned);
 
       const stakeWei = BigInt(s.stakeWei);
       const selfStakeWei = s.selfStakeWei
