@@ -1,23 +1,28 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validators, epochSnapshots } from "@/lib/db/schema";
-import { desc, eq, inArray } from "drizzle-orm";
-import { computeApy } from "@/lib/apy";
-import { calculateEpochReward } from "@/lib/monad-rpc";
+import { desc, inArray } from "drizzle-orm";
+import { getRealizedIncomeBatch } from "@/lib/realized-income";
 
 const WEI_PER_MON = BigInt(10) ** BigInt(18);
-const HISTORY_EPOCHS = 30;
+const STAKE_HISTORY_EPOCHS = 30;
 const MAX_COMPARE = 5;
 
 /**
  * GET /api/compare?ids=1,2,3
  *
- * Compare up to 5 validators side-by-side.
- * Returns for each validator:
- * - validatorId, name, stakeMon, commissionPct
- * - apy (from latest 2 snapshots)
- * - totalIncomeMon (from last 30 epochs)
- * - stakeHistory (last 30 epochs of stakeMon values for charting)
+ * Compare up to 5 validators side-by-side using REALIZED commission income
+ * (the same math that matches CFO ground truth at <0.1%). Used to use the
+ * pool×rate estimate which over/undercounted by 2-5x — that's been replaced
+ * with the unclaimed_rewards-delta method.
+ *
+ * Response shape (kept stable for the compare page):
+ *   validators: [{ validatorId, name, stakeMon, commissionPct, apy,
+ *                  totalIncomeMon, epochsAnalyzed, stakeHistory }]
+ *
+ * `apy` here is now realized commission yield on stake = totalCommissionMon /
+ * stakeMon, annualized via days-observed. This is the meaningful APY for
+ * commission income, not the broken accumulator-based estimate.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -50,7 +55,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 1. Fetch validator metadata for all requested IDs
     const validatorRows = await db
       .select()
       .from(validators)
@@ -60,7 +64,6 @@ export async function GET(request: Request) {
       validatorRows.map((v) => [v.validatorId, v])
     );
 
-    // Check which IDs were not found
     const missingIds = validatorIds.filter((id) => !validatorMap.has(id));
     if (missingIds.length === validatorIds.length) {
       return NextResponse.json(
@@ -69,89 +72,70 @@ export async function GET(request: Request) {
       );
     }
 
-    // 2. Fetch epoch snapshots for all requested validators
-    //    We need HISTORY_EPOCHS + 1 per validator to compute deltas
-    const allSnapshots = await db
-      .select()
+    // Realized commission income via shared lib — same math as CFO.
+    const realized = await getRealizedIncomeBatch(validatorIds);
+
+    // Stake history for the chart: last 30 epochs per validator.
+    const stakeRows = await db
+      .select({
+        validatorId: epochSnapshots.validatorId,
+        epoch: epochSnapshots.epoch,
+        stakeWei: epochSnapshots.stakeWei,
+      })
       .from(epochSnapshots)
       .where(inArray(epochSnapshots.validatorId, validatorIds))
       .orderBy(desc(epochSnapshots.epoch));
 
-    // Group snapshots by validatorId
-    const snapshotsByValidator = new Map<number, typeof allSnapshots>();
-    for (const s of allSnapshots) {
-      const existing = snapshotsByValidator.get(s.validatorId) || [];
-      // Only keep up to HISTORY_EPOCHS + 1 per validator
-      if (existing.length <= HISTORY_EPOCHS) {
-        existing.push(s);
-        snapshotsByValidator.set(s.validatorId, existing);
-      }
+    const stakeByValidator = new Map<
+      number,
+      Array<{ epoch: number; stakeMon: number }>
+    >();
+    for (const r of stakeRows) {
+      const arr = stakeByValidator.get(r.validatorId) ?? [];
+      if (arr.length >= STAKE_HISTORY_EPOCHS) continue;
+      const sw = BigInt(r.stakeWei);
+      const stakeMon =
+        Number(sw / WEI_PER_MON) + Number(sw % WEI_PER_MON) / Number(WEI_PER_MON);
+      arr.push({ epoch: r.epoch, stakeMon });
+      stakeByValidator.set(r.validatorId, arr);
     }
 
-    // 3. Build comparison data for each validator
     const comparisons = validatorIds
       .filter((id) => validatorMap.has(id))
       .map((id) => {
-        const validator = validatorMap.get(id)!;
-        const snapshots = snapshotsByValidator.get(id) || [];
+        const v = validatorMap.get(id)!;
+        const r = realized.get(id);
+        const totalCommissionMon = r?.totalCommissionMon ?? 0;
+        const firstEpoch = r?.firstEpoch ?? null;
+        const lastEpoch = r?.lastEpoch ?? null;
+        const epochsAnalyzed =
+          firstEpoch != null && lastEpoch != null
+            ? lastEpoch - firstEpoch
+            : 0;
+        const daysObserved = epochsAnalyzed / 4.36;
+        const stakeMon = Number(v.stakeMon) || 0;
 
-        // Compute APY from the latest 2 snapshots
-        let apy = 0;
-        if (snapshots.length >= 2) {
-          const latest = snapshots[0];
-          const prev = snapshots[1];
-          const epochSpan = latest.epoch - prev.epoch;
-
-          if (epochSpan > 0) {
-            const accOld = BigInt(prev.accRewardPerToken);
-            const accNew = BigInt(latest.accRewardPerToken);
-            const stakeWei = BigInt(prev.stakeWei);
-
-            apy = computeApy(accOld, accNew, stakeWei, epochSpan);
-          }
-        }
-
-        // Compute total income from consecutive snapshot deltas
-        const chronological = [...snapshots].reverse();
-        let totalIncomeMon = 0;
-
-        for (let i = 1; i < chronological.length; i++) {
-          const prev = chronological[i - 1];
-          const curr = chronological[i];
-
-          const accOld = BigInt(prev.accRewardPerToken);
-          const accNew = BigInt(curr.accRewardPerToken);
-          const stakeWei = BigInt(prev.stakeWei);
-
-          const { totalRewardMon } = calculateEpochReward(
-            accOld,
-            accNew,
-            stakeWei
-          );
-          totalIncomeMon += totalRewardMon;
-        }
-
-        // Build stake history (newest first) for charting
-        const stakeHistory = snapshots.map((s) => {
-          const sw = BigInt(s.stakeWei);
-          const stakeMon =
-            Number(sw / WEI_PER_MON) +
-            Number(sw % WEI_PER_MON) / Number(WEI_PER_MON);
-          return {
-            epoch: s.epoch,
-            stakeMon,
-          };
-        });
+        // Realized commission APY = annualized commission yield on stake.
+        // (commission / stake) / days * 365 * 100
+        const apy =
+          stakeMon > 0 && daysObserved > 0
+            ? (totalCommissionMon / stakeMon / daysObserved) * 365 * 100
+            : 0;
 
         return {
-          validatorId: validator.validatorId,
-          name: validator.name || `Validator #${validator.validatorId}`,
-          stakeMon: Number(validator.stakeMon) || 0,
-          commissionPct: Number(validator.commissionPct) || 0,
+          validatorId: v.validatorId,
+          name: v.name || `Validator #${v.validatorId}`,
+          stakeMon,
+          commissionPct: Number(v.commissionPct) || 0,
           apy: Number(apy.toFixed(4)),
-          totalIncomeMon,
-          epochsAnalyzed: chronological.length > 1 ? chronological.length - 1 : 0,
-          stakeHistory,
+          totalIncomeMon: totalCommissionMon,
+          totalCommissionMon,
+          totalClaimedMon: r?.totalClaimedMon ?? 0,
+          currentUnclaimedMon: r?.currentUnclaimedMon ?? 0,
+          claimCount: r?.claimCount ?? 0,
+          epochsAnalyzed,
+          daysObserved: Number(daysObserved.toFixed(2)),
+          stakeHistory: stakeByValidator.get(id) ?? [],
         };
       });
 

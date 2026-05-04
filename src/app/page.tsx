@@ -3,11 +3,14 @@
 /**
  * Home page — minimal, search-first, mobile-friendly.
  *
- * Selecting a validator from the search routes directly to /validators/[id]
- * which is the full dashboard (date range, FX toggle, CSV/PDF export, etc.).
- *
- * Includes a live "last updated" indexer freshness badge so users always know
- * how stale the data is.
+ * Layout choices:
+ * - Top bar: title + tiny live status dot ("12m ago" tooltip-style) — indexer
+ *   freshness lives here, not as a giant pill next to the stats. Solves the
+ *   "awkward floating sentence" problem.
+ * - Hero: 3-stat tile (price / staked / APY), centered, no other ornamentation.
+ * - Search: single combobox (the input IS the field, no two-step modal).
+ * - Explore: 3-column tile grid grouped by purpose. API + API Docs get their
+ *   own row at the top because they're the differentiator vs svt.one.
  */
 
 import { useState, useEffect } from "react";
@@ -62,7 +65,6 @@ function fmtPrice(n: number): string {
   return `$${n.toFixed(4)}`;
 }
 
-// Format "X minutes ago" / "X hours ago" from an ISO timestamp.
 function fmtRelativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (ms < 60_000) return "just now";
@@ -71,14 +73,32 @@ function fmtRelativeTime(iso: string): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-const EXPLORE_LINKS: Array<{ href: string; label: string; desc: string }> = [
-  { href: "/stake", label: "All validators", desc: "Sortable leaderboard" },
-  { href: "/network", label: "Network overview", desc: "Aggregate stats" },
-  { href: "/compare", label: "Compare", desc: "Side-by-side" },
-  { href: "/simulate", label: "Simulate", desc: "Project delegator returns" },
-  { href: "/mev", label: "MEV", desc: "Priority fee analytics" },
-  { href: "/reports", label: "Reports", desc: "Network commission leaderboard" },
-  { href: "/methodology", label: "Methodology", desc: "How numbers are computed" },
+// Explore tiles, grouped. The first group is the differentiator (API access).
+// The second is data exploration. Order matters — what we show first signals
+// what we want users to use.
+const EXPLORE_GROUPS: Array<{
+  label: string;
+  links: Array<{ href: string; label: string; desc: string }>;
+}> = [
+  {
+    label: "Build with the data",
+    links: [
+      { href: "/sdk", label: "Public API", desc: "REST endpoints, no auth" },
+      { href: "/api-explorer", label: "API reference", desc: "Interactive Swagger" },
+      { href: "/docs", label: "Integration guide", desc: "Curl / JS / Python" },
+    ],
+  },
+  {
+    label: "Explore on-chain income",
+    links: [
+      { href: "/stake", label: "All validators", desc: "Sortable leaderboard" },
+      { href: "/network", label: "Network overview", desc: "Aggregate stats" },
+      { href: "/compare", label: "Compare validators", desc: "Up to 5 side-by-side" },
+      { href: "/simulate", label: "Delegator simulator", desc: "Project your returns" },
+      { href: "/mev", label: "MEV analytics", desc: "Priority fee leaderboard" },
+      { href: "/methodology", label: "Methodology", desc: "Every formula, audited" },
+    ],
+  },
 ];
 
 export default function Home() {
@@ -125,7 +145,6 @@ export default function Home() {
     };
   }, []);
 
-  // Indexer status — refresh every minute so the "last updated" pill stays fresh.
   useEffect(() => {
     let cancelled = false;
     function load() {
@@ -149,7 +168,7 @@ export default function Home() {
   }
 
   const monPrice = livePrice?.monPriceUsd ?? overview?.monPriceUsd ?? 0;
-  const indexerHealthy = indexer && indexer.lagBlocks < 30_000; // ~8h
+  const indexerHealthy = indexer ? indexer.lagBlocks < 30_000 : true;
   const lastUpdated = indexer ? fmtRelativeTime(indexer.cursor.updatedAt) : null;
 
   return (
@@ -158,24 +177,34 @@ export default function Home() {
       <FloatingParticles />
 
       <div className="max-w-[1100px] mx-auto">
-        {/* Top bar — mobile collapses nav under title */}
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-10 sm:mb-12 opacity-0 animate-fade-in-up">
-          <Link href="/" className="flex items-center gap-3 flex-wrap">
+        {/* Top bar: title (with tiny live dot) on left, nav on right */}
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-12 opacity-0 animate-fade-in-up">
+          <Link href="/" className="flex items-center gap-3">
             <h1 className="font-display text-lg sm:text-xl text-cream tracking-[0.04em]">
               Monad Income Tracker
             </h1>
-            {overview?.activeValidators ? (
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-body uppercase tracking-widest text-cream-40 bg-cream-5 border border-cream-8 rounded-full px-2.5 py-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-phase-green animate-pulse" />
-                {overview.activeValidators} validators · epoch {overview.latestEpoch}
+            {/* Tiny live indicator — replaces the giant "Indexer at block X..." pill */}
+            {indexer && lastUpdated ? (
+              <span
+                title={`Block ${Number(indexer.cursor.lastBlock).toLocaleString()} · epoch ${indexer.cursor.lastEpoch} · synced ${lastUpdated}`}
+                className="inline-flex items-center gap-1.5 text-[10px] font-mono text-cream-40"
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    indexerHealthy
+                      ? "bg-phase-green animate-pulse"
+                      : "bg-phase-yellow"
+                  }`}
+                />
+                live
               </span>
             ) : null}
           </Link>
           <nav className="flex items-center gap-1 -mx-1 sm:mx-0">
             {[
-              { href: "/methodology", label: "Methodology" },
               { href: "/sdk", label: "API" },
-              { href: "/docs", label: "Docs" },
+              { href: "/api-explorer", label: "API Docs" },
+              { href: "/methodology", label: "Methodology" },
             ].map((l) => (
               <Link
                 key={l.href}
@@ -203,7 +232,6 @@ export default function Home() {
             from the Monad staking precompile. Open data for every validator.
           </p>
 
-          {/* Live tile row — wraps on mobile so the 3 stats stay readable */}
           <div className="mt-8 inline-flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-10 gap-y-3 px-5 sm:px-6 py-3 rounded-xl border border-cream-8 bg-cream-5">
             <div className="text-left">
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 flex items-center gap-1.5">
@@ -226,6 +254,15 @@ export default function Home() {
             <div className="hidden sm:block w-px h-8 bg-cream-8" />
             <div className="text-left">
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
+                Validators
+              </div>
+              <div className="font-mono text-cream text-base mt-0.5">
+                {overview?.activeValidators ?? "—"}
+              </div>
+            </div>
+            <div className="hidden sm:block w-px h-8 bg-cream-8" />
+            <div className="text-left">
+              <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
                 Avg APY
               </div>
               <div className="font-mono text-cream text-base mt-0.5">
@@ -233,23 +270,6 @@ export default function Home() {
               </div>
             </div>
           </div>
-
-          {/* Indexer freshness badge — small, honest, always visible */}
-          {indexer && lastUpdated && (
-            <div className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-body text-cream-40">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  indexerHealthy
-                    ? "bg-phase-green animate-pulse"
-                    : "bg-phase-yellow"
-                }`}
-              />
-              <span>
-                Indexer at block {Number(indexer.cursor.lastBlock).toLocaleString()} ·
-                updated {lastUpdated}
-              </span>
-            </div>
-          )}
         </section>
 
         {!dbReady ? (
@@ -268,39 +288,44 @@ export default function Home() {
                 onSelect={handleSelect}
               />
               <div className="mt-3 text-center text-[11px] font-body text-cream-40 px-2">
-                Pick a validator → opens their full dashboard with date range,
-                FX toggle, CSV / PDF export.
+                Pick a validator → opens their dashboard with date range, FX
+                toggle, CSV / PDF export.
               </div>
             </section>
 
+            {/* Explore — grouped by purpose, API tiles first */}
             <section
-              className="mt-12 mb-12 opacity-0 animate-fade-in-up"
+              className="mt-14 mb-12 opacity-0 animate-fade-in-up space-y-8"
               style={{ animationDelay: "0.24s" }}
             >
-              <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-3 text-center">
-                Explore
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {EXPLORE_LINKS.map((l) => (
-                  <Link
-                    key={l.href}
-                    href={l.href}
-                    className="group rounded-lg border border-cream-8 bg-cream-5 px-4 py-3 hover:border-cream-20 hover:bg-cream-8 transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-cream text-sm font-body font-medium">
-                          {l.label}
+              {EXPLORE_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-3">
+                    {group.label}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {group.links.map((l) => (
+                      <Link
+                        key={l.href}
+                        href={l.href}
+                        className="group rounded-lg border border-cream-8 bg-cream-5 px-4 py-3 hover:border-cream-20 hover:bg-cream-8 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-cream text-sm font-body font-medium">
+                              {l.label}
+                            </div>
+                            <div className="text-cream-40 text-[11px] font-body truncate">
+                              {l.desc}
+                            </div>
+                          </div>
+                          <ArrowRight className="w-3.5 h-3.5 text-cream-20 group-hover:text-cream-60 group-hover:translate-x-0.5 transition-all shrink-0" />
                         </div>
-                        <div className="text-cream-40 text-[11px] font-body truncate">
-                          {l.desc}
-                        </div>
-                      </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-cream-20 group-hover:text-cream-60 group-hover:translate-x-0.5 transition-all shrink-0" />
-                    </div>
-                  </Link>
-                ))}
-              </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </section>
           </>
         )}

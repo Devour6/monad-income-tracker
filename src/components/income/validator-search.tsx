@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Validator search — single-input combobox.
+ *
+ * The visible field IS the input. Type to search, results portal below.
+ * Both the input and the dropdown use a solid hex background (#0F0E0C)
+ * so the aurora/particles never bleed through.
+ */
+
 import { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Search, Server, X } from "lucide-react";
@@ -19,6 +27,12 @@ interface ValidatorSearchProps {
   onSelect: (v: ValidatorListItem) => void;
 }
 
+// Solid surfaces. Hex on style attribute beats Tailwind class precedence and
+// guarantees no transparency bleed against the animated background.
+const PANEL_BG = "#0F0E0C";
+const PANEL_BG_HOVER = "#1B1916";
+const PANEL_BORDER = "rgba(243, 238, 217, 0.12)";
+
 function formatStake(mon: number): string {
   if (mon >= 1_000_000_000) return `${(mon / 1_000_000_000).toFixed(2)}B`;
   if (mon >= 1_000_000) return `${(mon / 1_000_000).toFixed(1)}M`;
@@ -26,14 +40,6 @@ function formatStake(mon: number): string {
   return mon.toFixed(0);
 }
 
-const PANEL_BG = "#161513";
-const PANEL_BG_HOVER = "#1f1d1a";
-
-/**
- * Single-input combobox. The visible field IS the input — type to search,
- * results appear in a portal below it. No two-step "click to open another
- * search" pattern. Click in the field, type, see results, click one.
- */
 export function ValidatorSearch({
   validators,
   selected,
@@ -53,7 +59,6 @@ export function ValidatorSearch({
     setMounted(true);
   }, []);
 
-  // Recompute panel position when focused/scrolled/resized.
   useEffect(() => {
     if (!focused) return;
     function update() {
@@ -70,7 +75,6 @@ export function ValidatorSearch({
     };
   }, [focused]);
 
-  // Close when clicking outside both the wrapper and the portal list.
   useEffect(() => {
     if (!focused) return;
     function handleDown(e: MouseEvent) {
@@ -121,15 +125,11 @@ export function ValidatorSearch({
     }
   }
 
-  // Display value: when not focused and a validator is picked, show its name;
-  // otherwise show whatever the user is typing.
   const displayValue = focused
     ? query
     : selected
     ? `${selected.name}  ·  #${selected.validatorId}`
     : query;
-
-  const showList = focused;
 
   const panelStyle: React.CSSProperties = anchorRect
     ? {
@@ -138,14 +138,16 @@ export function ValidatorSearch({
         left: anchorRect.left,
         width: anchorRect.width,
         zIndex: 60,
+        background: PANEL_BG,
+        borderColor: PANEL_BORDER,
       }
     : { display: "none" };
 
-  const list = showList && (
+  const list = focused && (
     <div
       ref={listRef}
       style={panelStyle}
-      className="border border-cream-12 rounded-xl overflow-hidden shadow-[0_24px_64px_rgba(0,0,0,0.7)]"
+      className="border rounded-xl overflow-hidden shadow-[0_24px_64px_rgba(0,0,0,0.8)]"
       onMouseDown={(e) => e.preventDefault()}
     >
       <div
@@ -177,8 +179,8 @@ export function ValidatorSearch({
                   background: isActive
                     ? PANEL_BG_HOVER
                     : isSelected
-                    ? "rgba(74, 222, 128, 0.06)"
-                    : "transparent",
+                    ? "rgba(74, 222, 128, 0.08)"
+                    : PANEL_BG,
                 }}
               >
                 <Server className="w-4 h-4 text-cream-40 shrink-0" />
@@ -225,8 +227,8 @@ export function ValidatorSearch({
     <>
       <div ref={wrapRef} className="relative w-full">
         <div
-          className="flex items-center gap-3 border border-cream-12 rounded-xl px-5 py-4 shadow-[0_8px_32px_rgba(0,0,0,0.4)] focus-within:border-phase-green/40 transition-colors"
-          style={{ background: PANEL_BG }}
+          className="flex items-center gap-3 border rounded-xl px-5 py-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)] focus-within:border-phase-green/40 transition-colors"
+          style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}
         >
           <Search className="w-4 h-4 text-cream-40 shrink-0" />
           <input
@@ -238,9 +240,6 @@ export function ValidatorSearch({
               setFocused(true);
             }}
             onFocus={() => {
-              // If a validator was picked, opening the field clears it so
-              // the user can type a new query without manually deleting the
-              // selected name.
               if (selected) setQuery("");
               setFocused(true);
             }}
@@ -255,9 +254,6 @@ export function ValidatorSearch({
               type="button"
               onClick={() => {
                 setQuery("");
-                if (selected) {
-                  // Don't unselect — just clear text and refocus for new search.
-                }
                 inputRef.current?.focus();
               }}
               className="text-cream-40 hover:text-cream transition-colors shrink-0"
