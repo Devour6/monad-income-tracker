@@ -87,9 +87,17 @@ function reduceSnapshots(
       claimCount += 1;
     }
   }
+  const firstUnclaimedWei =
+    rows.length > 0 ? rows[0].unclaimedWei : BigInt(0);
   const currentUnclaimedWei =
     rows.length > 0 ? rows[rows.length - 1].unclaimedWei : BigInt(0);
-  const totalCommissionWei = totalClaimedWei + currentUnclaimedWei;
+  // Subtract the first snapshot's unclaimed: that balance accrued BEFORE
+  // our snapshot history began and shouldn't be counted as in-window income.
+  // For validators we tracked from epoch 0 (e.g. Phase) firstUnclaimed=0
+  // so this is a no-op. For validators that started earlier (Backpack et al),
+  // this correctly excludes their pre-tracking commission balance.
+  const totalCommissionWei =
+    totalClaimedWei + currentUnclaimedWei - firstUnclaimedWei;
   return {
     totalCommissionWei,
     currentUnclaimedWei,

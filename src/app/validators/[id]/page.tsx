@@ -1,13 +1,10 @@
 "use client";
 
 /**
- * Validator detail page — full dashboard for a single validator.
+ * Validator detail page — full dashboard for a single validator, mobile-friendly.
  *
- * Same chrome as the home page (top bar with title + nav links) so the site
- * feels like one app, not two.
- *
- * Inline controls: date range, FX toggle (live vs per-epoch),
- * CSV download, print to PDF. No round-trip to /reports.
+ * Same chrome as home (top bar with title + nav links). Inline controls:
+ * date range, FX toggle (live vs per-epoch), CSV download, print-to-PDF.
  *
  * Data: /api/v1/validators/[id]/realized-report — uses the unclaimed_rewards
  * delta + claim detection algorithm (matches CFO ground truth at <0.1%).
@@ -112,6 +109,14 @@ function fmtDate(iso: string | null): string {
   });
 }
 
+function fmtDateShort(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 const PRESETS: Array<{ label: string; days: number | "all" }> = [
   { label: "All time", days: "all" },
   { label: "Last 7d", days: 7 },
@@ -127,7 +132,6 @@ export default function ValidatorDashboard() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // Filter state — controls are always visible (not gated by data load)
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [fx, setFx] = useState<"per-epoch" | "end-of-period">("per-epoch");
@@ -141,7 +145,6 @@ export default function ValidatorDashboard() {
       p.set("serverCostUsd", String(serverCostUsd || 0));
       if (fromDate) p.set("fromDate", new Date(fromDate).toISOString());
       if (toDate) {
-        // Use end-of-day so the user's "to" date is inclusive.
         const end = new Date(toDate);
         end.setHours(23, 59, 59, 999);
         p.set("toDate", end.toISOString());
@@ -218,21 +221,21 @@ export default function ValidatorDashboard() {
   }, [fromDate, toDate]);
 
   return (
-    <div className="relative z-[1] min-h-screen px-6 pt-10 pb-6 print:bg-white print:text-black print:p-8">
+    <div className="relative z-[1] min-h-screen px-4 sm:px-6 pt-8 sm:pt-10 pb-6 print:bg-white print:text-black print:p-8">
       <div className="print:hidden">
         <AuroraBg />
         <FloatingParticles />
       </div>
 
       <div className="max-w-[1100px] mx-auto">
-        {/* Top bar — IDENTICAL to home page */}
-        <header className="flex items-center justify-between mb-12 opacity-0 animate-fade-in-up print:hidden">
+        {/* Top bar — same as home, mobile collapses nav under title */}
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8 sm:mb-12 opacity-0 animate-fade-in-up print:hidden">
           <Link href="/" className="flex items-center gap-3">
-            <h1 className="font-display text-xl text-cream tracking-[0.04em]">
+            <h1 className="font-display text-lg sm:text-xl text-cream tracking-[0.04em]">
               Monad Income Tracker
             </h1>
           </Link>
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1 -mx-1 sm:mx-0">
             {[
               { href: "/methodology", label: "Methodology" },
               { href: "/sdk", label: "API" },
@@ -250,9 +253,9 @@ export default function ValidatorDashboard() {
         </header>
 
         {/* Validator header */}
-        <header className="mb-8 pb-6 border-b border-cream-8 print:border-black/20">
-          <div className="flex items-baseline gap-3 mb-1 flex-wrap">
-            <h2 className="font-display text-3xl text-cream tracking-[0.02em] print:text-black">
+        <header className="mb-6 sm:mb-8 pb-5 sm:pb-6 border-b border-cream-8 print:border-black/20">
+          <div className="flex items-baseline gap-2 sm:gap-3 mb-1 flex-wrap">
+            <h2 className="font-display text-2xl sm:text-3xl text-cream tracking-[0.02em] print:text-black">
               {data?.validator?.name || `Validator #${validatorId}`}
             </h2>
             <span className="text-cream-40 text-xs font-mono px-2 py-0.5 rounded border border-cream-12 print:text-black/60 print:border-black/30">
@@ -264,17 +267,17 @@ export default function ValidatorDashboard() {
               href={`https://monadexplorer.com/address/${data.validator.authAddress}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-cream-40 hover:text-phase-green text-xs font-mono transition-colors print:text-black/60"
+              className="inline-flex items-center gap-1 text-cream-40 hover:text-phase-green text-[11px] sm:text-xs font-mono transition-colors print:text-black/60 break-all"
             >
-              {data.validator.authAddress}
-              <ExternalLink className="w-3 h-3 print:hidden" />
+              <span className="break-all">{data.validator.authAddress}</span>
+              <ExternalLink className="w-3 h-3 print:hidden shrink-0" />
             </a>
           )}
         </header>
 
-        {/* CONTROLS — always visible, not gated by data */}
-        <section className="mb-6 rounded-xl border border-cream-12 bg-cream-5 p-5 print:hidden">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* CONTROLS — always visible. Single column on mobile. */}
+        <section className="mb-6 rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5 print:hidden">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
             {/* Date range */}
             <div>
               <label className="block text-[10px] font-body uppercase tracking-widest text-cream-40 mb-2">
@@ -303,14 +306,14 @@ export default function ValidatorDashboard() {
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  className="flex-1 rounded-md border border-cream-12 bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:border-phase-green/40 focus:outline-none [color-scheme:dark]"
+                  className="flex-1 min-w-0 rounded-md border border-cream-12 bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:border-phase-green/40 focus:outline-none [color-scheme:dark]"
                 />
                 <span className="text-cream-40 text-xs font-body">→</span>
                 <input
                   type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  className="flex-1 rounded-md border border-cream-12 bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:border-phase-green/40 focus:outline-none [color-scheme:dark]"
+                  className="flex-1 min-w-0 rounded-md border border-cream-12 bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:border-phase-green/40 focus:outline-none [color-scheme:dark]"
                 />
               </div>
             </div>
@@ -329,7 +332,7 @@ export default function ValidatorDashboard() {
                       : "bg-cream-5 text-cream-40 hover:text-cream hover:bg-cream-8"
                   }`}
                 >
-                  Historical (per-epoch)
+                  Historical
                 </button>
                 <button
                   onClick={() => setFx("end-of-period")}
@@ -339,7 +342,7 @@ export default function ValidatorDashboard() {
                       : "bg-cream-5 text-cream-40 hover:text-cream hover:bg-cream-8"
                   }`}
                 >
-                  Current price
+                  Current
                 </button>
               </div>
               <div className="text-[10px] font-body text-cream-40 mt-1.5">
@@ -360,6 +363,7 @@ export default function ValidatorDashboard() {
                 <span className="text-cream-40 text-xs font-body">$</span>
                 <input
                   type="number"
+                  inputMode="decimal"
                   min={0}
                   step={1}
                   value={serverCostUsd || ""}
@@ -367,7 +371,7 @@ export default function ValidatorDashboard() {
                     setServerCostUsd(Math.max(0, Number(e.target.value) || 0))
                   }
                   placeholder="0"
-                  className="flex-1 bg-transparent text-cream text-xs font-body outline-none w-full"
+                  className="flex-1 bg-transparent text-cream text-xs font-body outline-none w-full min-w-0"
                 />
               </div>
               <div className="text-[10px] font-body text-cream-40 mt-1.5">
@@ -376,9 +380,9 @@ export default function ValidatorDashboard() {
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions — wrap on mobile */}
           <div className="mt-5 pt-4 border-t border-cream-12 flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-body uppercase tracking-widest text-cream-40 mr-2">
+            <span className="text-[10px] font-body uppercase tracking-widest text-cream-40 mr-1">
               Export
             </span>
             <button
@@ -386,42 +390,41 @@ export default function ValidatorDashboard() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-phase-green bg-phase-green/10 border border-phase-green/30 rounded-md hover:bg-phase-green/15 transition-all"
             >
               <FileDown className="w-3.5 h-3.5" />
-              Download CSV
+              CSV
             </button>
             <button
               onClick={printPdf}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-body text-cream-60 bg-cream-5 hover:bg-cream-8 border border-cream-12 rounded-md transition-all"
             >
               <Printer className="w-3.5 h-3.5" />
-              Print / Save PDF
+              PDF
             </button>
             {data && (
-              <span className="ml-auto text-[10px] font-body text-cream-40">
+              <span className="basis-full sm:basis-auto sm:ml-auto text-[10px] font-body text-cream-40">
                 {data.window.epochSpan} epochs · {data.window.daysObserved.toFixed(1)} days
               </span>
             )}
           </div>
         </section>
 
-        {/* Status states — only swap the data area, controls stay above */}
         {loading && !data ? (
-          <div className="text-center py-20 text-cream-40 text-sm font-body animate-pulse">
+          <div className="text-center py-16 sm:py-20 text-cream-40 text-sm font-body animate-pulse">
             Loading validator data…
           </div>
         ) : err ? (
-          <div className="text-center py-20 text-cream-60 text-sm font-body">
+          <div className="text-center py-16 sm:py-20 text-cream-60 text-sm font-body">
             <div className="font-medium mb-2">Couldn&apos;t load this validator</div>
             <div className="text-cream-40 text-xs">{err}</div>
           </div>
         ) : data ? (
           <>
-            {/* Headline tile */}
-            <section className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="rounded-xl border border-phase-green/30 bg-phase-green/5 p-5 sm:col-span-1">
+            {/* Headline tiles — stack on mobile, wider hero */}
+            <section className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              <div className="rounded-xl border border-phase-green/30 bg-phase-green/5 p-4 sm:p-5">
                 <div className="text-[10px] font-body uppercase tracking-widest text-phase-green mb-1.5">
                   Total income
                 </div>
-                <div className="font-display text-3xl text-cream tracking-wide print:text-black">
+                <div className="font-display text-2xl sm:text-3xl text-cream tracking-wide print:text-black">
                   {fmtMon(data.summary.totalIncomeMon)}
                   <span className="text-cream-40 text-base font-body ml-1.5">MON</span>
                 </div>
@@ -434,12 +437,12 @@ export default function ValidatorDashboard() {
                   )}
                 </div>
               </div>
-              <div className="rounded-xl border border-cream-12 bg-cream-5 p-5">
+              <div className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5">
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5 inline-flex items-center gap-1.5">
                   <CheckCircle2 className="w-3 h-3 text-phase-green" />
                   Already claimed
                 </div>
-                <div className="font-display text-2xl text-cream tracking-wide print:text-black">
+                <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
                   {fmtMon(data.summary.claimedMon)}
                   <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
                 </div>
@@ -450,12 +453,12 @@ export default function ValidatorDashboard() {
                   {data.claimEvents.length} claim event{data.claimEvents.length === 1 ? "" : "s"}
                 </div>
               </div>
-              <div className="rounded-xl border border-cream-12 bg-cream-5 p-5">
+              <div className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5">
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5 inline-flex items-center gap-1.5">
                   <Hourglass className="w-3 h-3 text-phase-yellow" />
                   Unclaimed
                 </div>
-                <div className="font-display text-2xl text-cream tracking-wide print:text-black">
+                <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
                   {fmtMon(data.summary.unclaimedMon)}
                   <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
                 </div>
@@ -468,13 +471,13 @@ export default function ValidatorDashboard() {
               </div>
             </section>
 
-            {/* Vitals row */}
-            <section className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Vitals row — 2 cols on mobile, 4 on tablet+ */}
+            <section className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
               <div className="rounded-lg border border-cream-8 bg-cream-5 p-3">
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
                   Stake
                 </div>
-                <div className="font-mono text-cream text-sm mt-1">
+                <div className="font-mono text-cream text-sm mt-1 truncate">
                   {fmtMon(data.validator.stakeMon)} MON
                 </div>
               </div>
@@ -490,7 +493,7 @@ export default function ValidatorDashboard() {
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
                   Priority fees
                 </div>
-                <div className="font-mono text-cream text-sm mt-1">
+                <div className="font-mono text-cream text-sm mt-1 truncate">
                   {fmtMon(data.summary.priorityFeesMon)} MON
                 </div>
               </div>
@@ -504,22 +507,22 @@ export default function ValidatorDashboard() {
               </div>
             </section>
 
-            {/* Chart */}
+            {/* Chart — shorter on mobile */}
             {chartData.length > 0 && (
-              <section className="mb-6 rounded-xl border border-cream-12 bg-cream-5 p-5 print:hidden">
+              <section className="mb-6 rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5 print:hidden">
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-3">
                   Per-epoch income (last {chartData.length} epochs)
                 </div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={chartData}>
+                <ResponsiveContainer width="100%" height={180} className="sm:!h-[220px]">
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(243, 238, 217, 0.08)" />
                     <XAxis
                       dataKey="epoch"
-                      tick={{ fontSize: 10, fill: "rgba(243, 238, 217, 0.4)" }}
+                      tick={{ fontSize: 9, fill: "rgba(243, 238, 217, 0.4)" }}
                       stroke="rgba(243, 238, 217, 0.12)"
                     />
                     <YAxis
-                      tick={{ fontSize: 10, fill: "rgba(243, 238, 217, 0.4)" }}
+                      tick={{ fontSize: 9, fill: "rgba(243, 238, 217, 0.4)" }}
                       stroke="rgba(243, 238, 217, 0.12)"
                     />
                     <Tooltip
@@ -538,9 +541,10 @@ export default function ValidatorDashboard() {
               </section>
             )}
 
-            {/* Per-epoch table */}
+            {/* Per-epoch table — horizontally scrollable on mobile.
+                Date column hidden on mobile to keep it scannable. */}
             <section className="mb-6 rounded-xl border border-cream-12 bg-cream-5 overflow-hidden">
-              <div className="px-5 py-3 border-b border-cream-12 flex items-center justify-between">
+              <div className="px-4 sm:px-5 py-3 border-b border-cream-12 flex items-center justify-between">
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
                   Per-epoch breakdown
                 </div>
@@ -549,18 +553,18 @@ export default function ValidatorDashboard() {
                 </div>
               </div>
               <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-                <table className="w-full text-xs font-body">
+                <table className="w-full text-xs font-body min-w-[640px]">
                   <thead className="bg-cream-5 sticky top-0 z-10">
                     <tr className="text-cream-40 text-[10px] uppercase tracking-widest">
-                      <th className="text-left px-4 py-2 font-body">Epoch</th>
-                      <th className="text-left px-4 py-2 font-body">Date</th>
-                      <th className="text-right px-4 py-2 font-body">Stake (MON)</th>
-                      <th className="text-right px-4 py-2 font-body">Comm %</th>
-                      <th className="text-right px-4 py-2 font-body">Comm (MON)</th>
-                      <th className="text-right px-4 py-2 font-body">Pri Fees</th>
-                      <th className="text-right px-4 py-2 font-body">$/MON</th>
-                      <th className="text-right px-4 py-2 font-body">Total USD</th>
-                      <th className="text-center px-3 py-2 font-body">Claim</th>
+                      <th className="text-left px-3 sm:px-4 py-2 font-body">Epoch</th>
+                      <th className="hidden sm:table-cell text-left px-4 py-2 font-body">Date</th>
+                      <th className="text-right px-3 sm:px-4 py-2 font-body">Stake</th>
+                      <th className="text-right px-3 sm:px-4 py-2 font-body">Comm %</th>
+                      <th className="text-right px-3 sm:px-4 py-2 font-body">Comm</th>
+                      <th className="hidden sm:table-cell text-right px-4 py-2 font-body">Pri Fees</th>
+                      <th className="hidden sm:table-cell text-right px-4 py-2 font-body">$/MON</th>
+                      <th className="text-right px-3 sm:px-4 py-2 font-body">USD</th>
+                      <th className="text-center px-2 sm:px-3 py-2 font-body">Claim</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -574,31 +578,31 @@ export default function ValidatorDashboard() {
                             i % 2 === 0 ? "bg-transparent" : "bg-cream-5/40"
                           }`}
                         >
-                          <td className="px-4 py-2 text-cream font-mono">{e.epoch}</td>
-                          <td className="px-4 py-2 text-cream-60">
-                            {fmtDate(e.timestamp)}
+                          <td className="px-3 sm:px-4 py-2 text-cream font-mono">{e.epoch}</td>
+                          <td className="hidden sm:table-cell px-4 py-2 text-cream-60">
+                            {fmtDateShort(e.timestamp)}
                           </td>
-                          <td className="px-4 py-2 text-right text-cream font-mono">
-                            {fmtMonExact(e.stakeMon)}
+                          <td className="px-3 sm:px-4 py-2 text-right text-cream font-mono">
+                            {fmtMon(e.stakeMon)}
                           </td>
-                          <td className="px-4 py-2 text-right text-cream-60 font-mono">
+                          <td className="px-3 sm:px-4 py-2 text-right text-cream-60 font-mono">
                             {e.commissionPct}%
                           </td>
-                          <td className="px-4 py-2 text-right text-cream font-mono">
+                          <td className="px-3 sm:px-4 py-2 text-right text-cream font-mono">
                             {fmtMonExact(e.commissionMon)}
                           </td>
-                          <td className="px-4 py-2 text-right text-cream-60 font-mono">
+                          <td className="hidden sm:table-cell px-4 py-2 text-right text-cream-60 font-mono">
                             {e.priorityFeesMon > 0
                               ? fmtMonExact(e.priorityFeesMon)
                               : "—"}
                           </td>
-                          <td className="px-4 py-2 text-right text-cream-40 font-mono">
+                          <td className="hidden sm:table-cell px-4 py-2 text-right text-cream-40 font-mono">
                             ${e.fxPriceUsd.toFixed(4)}
                           </td>
-                          <td className="px-4 py-2 text-right text-cream font-mono">
+                          <td className="px-3 sm:px-4 py-2 text-right text-cream font-mono">
                             {fmtUsd(e.commissionUsd + e.priorityFeesUsd)}
                           </td>
-                          <td className="px-3 py-2 text-center">
+                          <td className="px-2 sm:px-3 py-2 text-center">
                             {e.claimedMon > 0 ? (
                               <span
                                 className="inline-flex items-center justify-center text-phase-green"
@@ -620,7 +624,7 @@ export default function ValidatorDashboard() {
             {/* Claim history */}
             {data.claimEvents.length > 0 && (
               <section className="mb-6 rounded-xl border border-cream-12 bg-cream-5 overflow-hidden">
-                <div className="px-5 py-3 border-b border-cream-12">
+                <div className="px-4 sm:px-5 py-3 border-b border-cream-12">
                   <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
                     Claim history
                   </div>
@@ -629,16 +633,16 @@ export default function ValidatorDashboard() {
                   {[...data.claimEvents].reverse().map((c) => (
                     <div
                       key={c.epoch}
-                      className="px-5 py-2.5 flex items-center justify-between text-xs font-body"
+                      className="px-4 sm:px-5 py-2.5 flex items-center justify-between gap-2 text-xs font-body"
                     >
-                      <div className="flex items-center gap-3">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-phase-green" />
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-phase-green shrink-0" />
                         <span className="text-cream-60">epoch {c.epoch}</span>
-                        <span className="text-cream-40">
+                        <span className="text-cream-40 truncate">
                           {fmtDate(c.timestamp)}
                         </span>
                       </div>
-                      <span className="text-cream font-mono">
+                      <span className="text-cream font-mono shrink-0">
                         {fmtMonExact(c.amountMon)} MON
                       </span>
                     </div>

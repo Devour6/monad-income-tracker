@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * Home page — minimal, search-first.
+ * Home page — minimal, search-first, mobile-friendly.
  *
  * Selecting a validator from the search routes directly to /validators/[id]
  * which is the full dashboard (date range, FX toggle, CSV/PDF export, etc.).
- * No preview tile here — we don't fork the rendering paths.
+ *
+ * Includes a live "last updated" indexer freshness badge so users always know
+ * how stale the data is.
  */
 
 import { useState, useEffect } from "react";
@@ -41,6 +43,12 @@ interface LivePrice {
   source: string;
 }
 
+interface IndexerStatus {
+  cursor: { lastBlock: string; lastEpoch: number; updatedAt: string };
+  chainHead: string;
+  lagBlocks: number;
+}
+
 function fmtUsd(n: number): string {
   if (!isFinite(n) || n <= 0) return "$0";
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
@@ -54,12 +62,22 @@ function fmtPrice(n: number): string {
   return `$${n.toFixed(4)}`;
 }
 
+// Format "X minutes ago" / "X hours ago" from an ISO timestamp.
+function fmtRelativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "just now";
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
+}
+
 const EXPLORE_LINKS: Array<{ href: string; label: string; desc: string }> = [
   { href: "/stake", label: "All validators", desc: "Sortable leaderboard" },
   { href: "/network", label: "Network overview", desc: "Aggregate stats" },
   { href: "/compare", label: "Compare", desc: "Side-by-side" },
   { href: "/simulate", label: "Simulate", desc: "Project delegator returns" },
   { href: "/mev", label: "MEV", desc: "Priority fee analytics" },
+  { href: "/reports", label: "Reports", desc: "Network commission leaderboard" },
   { href: "/methodology", label: "Methodology", desc: "How numbers are computed" },
 ];
 
@@ -68,6 +86,7 @@ export default function Home() {
   const [validators, setValidators] = useState<ValidatorListItem[]>([]);
   const [overview, setOverview] = useState<NetworkOverview | null>(null);
   const [livePrice, setLivePrice] = useState<LivePrice | null>(null);
+  const [indexer, setIndexer] = useState<IndexerStatus | null>(null);
   const [dbReady, setDbReady] = useState(true);
 
   useEffect(() => {
@@ -106,34 +125,53 @@ export default function Home() {
     };
   }, []);
 
-  // Selecting a validator from the search bar takes you straight to its
-  // full dashboard. No half-baked preview on the home page.
+  // Indexer status — refresh every minute so the "last updated" pill stays fresh.
+  useEffect(() => {
+    let cancelled = false;
+    function load() {
+      fetch("/api/v1/indexer/status")
+        .then((r) => r.json())
+        .then((d) => {
+          if (!cancelled && !d.error) setIndexer(d);
+        })
+        .catch(() => {});
+    }
+    load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
   function handleSelect(v: ValidatorListItem) {
     router.push(`/validators/${v.validatorId}`);
   }
 
   const monPrice = livePrice?.monPriceUsd ?? overview?.monPriceUsd ?? 0;
+  const indexerHealthy = indexer && indexer.lagBlocks < 30_000; // ~8h
+  const lastUpdated = indexer ? fmtRelativeTime(indexer.cursor.updatedAt) : null;
 
   return (
-    <div className="relative z-[1] min-h-screen px-6 pt-10 pb-6">
+    <div className="relative z-[1] min-h-screen px-4 sm:px-6 pt-8 sm:pt-10 pb-6">
       <AuroraBg />
       <FloatingParticles />
 
       <div className="max-w-[1100px] mx-auto">
-        {/* Top bar — title + nav links */}
-        <header className="flex items-center justify-between mb-12 opacity-0 animate-fade-in-up">
-          <Link href="/" className="flex items-center gap-3">
-            <h1 className="font-display text-xl text-cream tracking-[0.04em]">
+        {/* Top bar — mobile collapses nav under title */}
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-10 sm:mb-12 opacity-0 animate-fade-in-up">
+          <Link href="/" className="flex items-center gap-3 flex-wrap">
+            <h1 className="font-display text-lg sm:text-xl text-cream tracking-[0.04em]">
               Monad Income Tracker
             </h1>
             {overview?.activeValidators ? (
-              <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] font-body uppercase tracking-widest text-cream-40 bg-cream-5 border border-cream-8 rounded-full px-2.5 py-0.5">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-body uppercase tracking-widest text-cream-40 bg-cream-5 border border-cream-8 rounded-full px-2.5 py-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-phase-green animate-pulse" />
                 {overview.activeValidators} validators · epoch {overview.latestEpoch}
               </span>
             ) : null}
           </Link>
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1 -mx-1 sm:mx-0">
             {[
               { href: "/methodology", label: "Methodology" },
               { href: "/sdk", label: "API" },
@@ -155,17 +193,18 @@ export default function Home() {
           className="text-center mb-10 opacity-0 animate-fade-in-up"
           style={{ animationDelay: "0.08s" }}
         >
-          <h2 className="font-display text-[40px] sm:text-[52px] leading-[1.05] text-cream tracking-[0.02em] mb-4">
+          <h2 className="font-display text-[34px] sm:text-[52px] leading-[1.05] text-cream tracking-[0.02em] mb-4">
             Validator income
             <br />
             <span className="text-phase-green">measured, not estimated</span>
           </h2>
-          <p className="font-body text-cream-60 text-[15px] max-w-xl mx-auto leading-relaxed">
+          <p className="font-body text-cream-60 text-[14px] sm:text-[15px] max-w-xl mx-auto leading-relaxed px-2">
             Lifetime commission, claims, and unclaimed rewards — pulled directly
             from the Monad staking precompile. Open data for every validator.
           </p>
 
-          <div className="mt-8 inline-flex items-center gap-6 sm:gap-10 px-6 py-3 rounded-xl border border-cream-8 bg-cream-5">
+          {/* Live tile row — wraps on mobile so the 3 stats stay readable */}
+          <div className="mt-8 inline-flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-10 gap-y-3 px-5 sm:px-6 py-3 rounded-xl border border-cream-8 bg-cream-5">
             <div className="text-left">
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-phase-green animate-pulse" />
@@ -175,7 +214,7 @@ export default function Home() {
                 {fmtPrice(monPrice)}
               </div>
             </div>
-            <div className="w-px h-8 bg-cream-8" />
+            <div className="hidden sm:block w-px h-8 bg-cream-8" />
             <div className="text-left">
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
                 Total staked
@@ -184,7 +223,7 @@ export default function Home() {
                 {overview ? fmtUsd(overview.totalStakeUsd) : "—"}
               </div>
             </div>
-            <div className="w-px h-8 bg-cream-8" />
+            <div className="hidden sm:block w-px h-8 bg-cream-8" />
             <div className="text-left">
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40">
                 Avg APY
@@ -194,6 +233,23 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* Indexer freshness badge — small, honest, always visible */}
+          {indexer && lastUpdated && (
+            <div className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-body text-cream-40">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  indexerHealthy
+                    ? "bg-phase-green animate-pulse"
+                    : "bg-phase-yellow"
+                }`}
+              />
+              <span>
+                Indexer at block {Number(indexer.cursor.lastBlock).toLocaleString()} ·
+                updated {lastUpdated}
+              </span>
+            </div>
+          )}
         </section>
 
         {!dbReady ? (
@@ -202,7 +258,6 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* Search — pick a validator → routes to its dashboard */}
             <section
               className="max-w-2xl mx-auto mb-4 opacity-0 animate-fade-in-up"
               style={{ animationDelay: "0.16s" }}
@@ -212,13 +267,12 @@ export default function Home() {
                 selected={null}
                 onSelect={handleSelect}
               />
-              <div className="mt-3 text-center text-[11px] font-body text-cream-40">
+              <div className="mt-3 text-center text-[11px] font-body text-cream-40 px-2">
                 Pick a validator → opens their full dashboard with date range,
                 FX toggle, CSV / PDF export.
               </div>
             </section>
 
-            {/* Explore */}
             <section
               className="mt-12 mb-12 opacity-0 animate-fade-in-up"
               style={{ animationDelay: "0.24s" }}
@@ -226,7 +280,7 @@ export default function Home() {
               <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-3 text-center">
                 Explore
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {EXPLORE_LINKS.map((l) => (
                   <Link
                     key={l.href}
