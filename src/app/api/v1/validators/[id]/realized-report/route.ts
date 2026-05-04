@@ -296,7 +296,12 @@ export async function GET(
     // 9. Server cost pro-rated over claim-window days.
     const serverCostProRatedUsd =
       (serverCostMonthlyUsd / 30) * Math.max(0, daysObserved);
-    const totalIncomeUsd = totalCommissionUsd + priorityFeesUsd;
+    // Mirror the totalIncomeMon formula: lifetime view includes currentUnclaimed,
+    // sliced windows do not (they'd mix periods).
+    const totalIncomeUsd =
+      totalCommissionUsd +
+      priorityFeesUsd +
+      (isFullWindow ? currentUnclaimedMon * livePrice : 0);
     const netUsd = totalIncomeUsd - serverCostProRatedUsd;
 
     const summary = {
