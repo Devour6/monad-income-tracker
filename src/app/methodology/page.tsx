@@ -10,7 +10,7 @@ import { IndexerStatus } from "@/components/indexer-status";
 /**
  * Public methodology page — explains every formula, every data source, and
  * every assumption. The point is auditability: any operator should be able
- * to verify our numbers themselves.
+ * to verify our numbers themselves against the on-chain data.
  */
 export default function MethodologyPage() {
   return (
@@ -37,10 +37,11 @@ export default function MethodologyPage() {
             How every number is computed
           </h1>
           <p className="mt-3 text-sm font-body text-cream-60 leading-relaxed">
-            Validator income data only matters if it&apos;s auditable. This
-            page documents every formula, every data source, and every
-            assumption used by the tracker — so any operator can verify what
-            we say. If anything here looks wrong, the code is open at{" "}
+            This is an income tracker, not an income model. Every commission
+            number on this site comes from on-chain events the validator
+            actually signed. We don&apos;t multiply rates by stake to project
+            income — we sum the literal MON that left the staking precompile
+            and credit it as paid. Code is open at{" "}
             <a
               href="https://github.com/Devour6/monad-income-tracker"
               target="_blank"
@@ -55,78 +56,158 @@ export default function MethodologyPage() {
 
         <IndexerStatus />
 
-        {/* ── Income streams ─────────────────────────────────────────── */}
+        {/* ── Income, defined ────────────────────────────────────────── */}
         <section className="mt-10 mb-10">
           <h2 className="mb-4 font-display text-lg text-cream tracking-wide">
-            The four income streams
+            What &ldquo;income&rdquo; means here
           </h2>
           <div className="space-y-4 rounded-xl border border-cream-8 bg-cream-5 p-5 text-sm font-body text-cream-60 leading-relaxed">
             <p>
-              A Monad validator company&apos;s realized income decomposes
-              into four observable streams:
+              A Monad validator company collects income through two
+              independent streams:
             </p>
             <ol className="ml-5 list-decimal space-y-3">
               <li>
-                <strong className="text-cream">Pool rewards</strong> — total
-                inflation+commission rewards earned by the stake pool
-                (validator self-stake + delegators). Sourced from the staking
-                precompile&apos;s <code className="font-mono text-xs text-phase-green">accRewardPerToken</code>{" "}
-                accumulator.
-              </li>
-              <li>
-                <strong className="text-cream">Commission</strong> — what the
-                validator company takes off the top.{" "}
-                <code className="font-mono text-xs text-phase-green">commission_rate × pool_rewards</code>
-                . The on-chain commission rate is an 18-decimal fixed-point.
-              </li>
-              <li>
-                <strong className="text-cream">Self-stake share</strong> —
-                validator&apos;s own delegation entry returns its proportional
-                share of the post-commission delegator pool. Computed as{" "}
-                <code className="font-mono text-xs text-phase-green">delegator_pool × (self_stake / total_stake)</code>
+                <strong className="text-cream">Commission</strong> — earned
+                each block as a percentage of that block&apos;s reward,
+                accumulated by the staking precompile in the validator&apos;s{" "}
+                <code className="font-mono text-xs text-phase-green">unclaimedRewards</code>{" "}
+                slot, and withdrawn whenever the validator&apos;s auth
+                address calls{" "}
+                <code className="font-mono text-xs text-phase-green">claimRewards(validatorId)</code>
                 .
               </li>
               <li>
                 <strong className="text-cream">Priority fees (MEV)</strong> —
-                EIP-1559 priority fees flow directly to the block producer,
-                bypassing the staking precompile entirely. We index these at
-                the block level (see below).
+                EIP-1559 priority fees flow directly to the block producer&apos;s
+                native MON balance, bypassing the staking precompile entirely.
               </li>
             </ol>
             <p className="mt-2">
-              Validator total realized income =&nbsp;
+              Lifetime commission income =&nbsp;
               <code className="font-mono text-xs text-phase-green">
-                commission + self_stake_share + priority_fees
+                Σ ClaimRewards.amount + currentUnclaimedRewards
               </code>
-              . Headline APY decomposition (pool / delegator / validator
-              capital / commission yield) is derived from these per-epoch
-              values.
+              . That&apos;s the exact MON that has been or can be paid into the
+              validator&apos;s wallet, no projection involved.
             </p>
           </div>
         </section>
 
-        {/* ── Pool rewards math ──────────────────────────────────────── */}
+        {/* ── ClaimRewards event indexer ─────────────────────────────── */}
         <section className="mb-10">
-          <h2 className="mb-4 font-display text-lg text-cream tracking-wide">
-            Pool reward calculation
+          <h2 className="mb-4 font-display text-lg text-cream tracking-wide flex items-center gap-2">
+            <Code2 className="h-5 w-5 text-phase-green" />
+            ClaimRewards event indexer
           </h2>
           <div className="rounded-xl border border-cream-8 bg-cream-5 p-5 text-sm font-body text-cream-60 leading-relaxed space-y-3">
             <p>
-              The Monad staking precompile at{" "}
-              <code className="font-mono text-xs text-phase-green">0x1000</code>{" "}
-              exposes <code className="font-mono text-xs text-phase-green">accRewardPerToken</code>
-              {" "}— a monotonically increasing accumulator scaled by{" "}
-              <code className="font-mono text-xs text-phase-green">10^36</code>.
-              For any two snapshots on the same validator:
+              The staking precompile at{" "}
+              <code className="font-mono text-xs text-phase-green">
+                0x0000000000000000000000000000000000001000
+              </code>{" "}
+              emits a{" "}
+              <code className="font-mono text-xs text-phase-green">
+                ClaimRewards(uint64 validatorId, address delegator, uint256 amount, uint64 epoch)
+              </code>{" "}
+              event on every claim. Topic hash:
             </p>
             <pre className="rounded-md border border-cream-8 bg-dark p-3 text-xs font-mono text-cream overflow-x-auto">
-{`reward_wei = (acc_new − acc_old) × stake_wei / 10^36
-reward_mon = reward_wei / 10^18`}
+{`0xcb607e6b63c89c95f6ae24ece9fe0e38a7971aa5ed956254f1df47490921727b`}
             </pre>
             <p>
-              We use the <em>previous</em> epoch&apos;s stake — that&apos;s
-              the stake that earned this epoch&apos;s rewards — and never
-              compute reward against the in-progress epoch.
+              We continuously scan{" "}
+              <code className="font-mono text-xs text-phase-green">eth_getLogs</code>{" "}
+              against the precompile address filtered by that topic and
+              persist every event into the{" "}
+              <code className="font-mono text-xs text-phase-green">claim_events</code>{" "}
+              table:
+            </p>
+            <pre className="rounded-md border border-cream-8 bg-dark p-3 text-xs font-mono text-cream overflow-x-auto">
+{`validator_id  | uint64  -- the validator paid out from
+delegator     | address -- the recipient of the claim
+amount_wei    | uint256 -- exact MON paid (wei)
+epoch         | uint64  -- on-chain epoch at claim time
+block_number  | uint64  -- the block this claim landed in
+block_timestamp        -- chain time of the claim
+tx_hash       | text    -- the on-chain transaction`}
+            </pre>
+            <p>
+              For{" "}
+              <strong className="text-cream">validator commission</strong> we
+              filter rows where{" "}
+              <code className="font-mono text-xs text-phase-green">delegator</code>{" "}
+              equals the validator&apos;s registered{" "}
+              <code className="font-mono text-xs text-phase-green">authAddress</code>{" "}
+              — that&apos;s the validator paying themselves their accumulated
+              commission. Rows where the delegator is anyone else represent
+              third-party delegators withdrawing their staking yield and are
+              excluded from validator commission totals.
+            </p>
+          </div>
+        </section>
+
+        {/* ── Currently unclaimed ────────────────────────────────────── */}
+        <section className="mb-10">
+          <h2 className="mb-4 font-display text-lg text-cream tracking-wide">
+            Currently unclaimed balance
+          </h2>
+          <div className="rounded-xl border border-cream-8 bg-cream-5 p-5 text-sm font-body text-cream-60 leading-relaxed space-y-3">
+            <p>
+              The amount sitting in the precompile waiting to be claimed is
+              read from{" "}
+              <code className="font-mono text-xs text-phase-green">
+                getValidator(validatorId)
+              </code>{" "}
+              slot 5 (<code className="font-mono text-xs text-phase-green">unclaimedRewards</code>).
+              We snapshot it once per epoch and use the latest snapshot to
+              report &ldquo;pending&rdquo; income.
+            </p>
+            <p>
+              Lifetime commission =&nbsp;
+              <code className="font-mono text-xs text-phase-green">
+                claimed + currentUnclaimed
+              </code>
+              . The two together capture every MON of commission the
+              validator has ever generated, whether already withdrawn or
+              still claimable.
+            </p>
+          </div>
+        </section>
+
+        {/* ── FX methodology ─────────────────────────────────────────── */}
+        <section className="mb-10">
+          <h2 className="mb-4 font-display text-lg text-cream tracking-wide">
+            USD valuation: per-claim vs current price
+          </h2>
+          <div className="rounded-xl border border-cream-8 bg-cream-5 p-5 text-sm font-body text-cream-60 leading-relaxed space-y-3">
+            <p>
+              Every reporting endpoint accepts{" "}
+              <code className="font-mono text-xs text-phase-green">?fx=per-epoch</code>{" "}
+              or{" "}
+              <code className="font-mono text-xs text-phase-green">?fx=end-of-period</code>:
+            </p>
+            <ul className="ml-5 list-disc space-y-2">
+              <li>
+                <strong className="text-cream">per-epoch (default)</strong> —
+                each claim is valued at the MON/USD price recorded at that
+                claim&apos;s epoch. Reflects what the income was worth at
+                the time it was earned. Good for accounting and tax cost
+                basis.
+              </li>
+              <li>
+                <strong className="text-cream">end-of-period</strong> — every
+                claim is valued at the current live MON/USD price. Reflects
+                what the same MON is worth right now. Good for &ldquo;what
+                is my treasury worth today.&rdquo;
+              </li>
+            </ul>
+            <p>
+              Historical prices come from CoinGecko&apos;s daily MON/USD,
+              snapshotted into the{" "}
+              <code className="font-mono text-xs text-phase-green">network_epochs</code>{" "}
+              table per epoch. Live price is refreshed every two minutes via
+              a CoinGecko poller.
             </p>
           </div>
         </section>
@@ -139,16 +220,13 @@ reward_mon = reward_wei / 10^18`}
           </h2>
           <div className="rounded-xl border border-cream-8 bg-cream-5 p-5 text-sm font-body text-cream-60 leading-relaxed space-y-3">
             <p>
-              The interesting part. Priority fees on Monad don&apos;t go
-              through the staking precompile — they land in the block
-              producer&apos;s native MON balance. Earlier we proxied this
-              via balance deltas, but balance is polluted by claims,
-              transfers, and gas spends. So we replaced the proxy with a
-              real block-level indexer:
+              Priority fees on Monad don&apos;t flow through the staking
+              precompile — they land directly in the block producer&apos;s
+              MON balance. We index them at the block level:
             </p>
             <ol className="ml-5 list-decimal space-y-2">
               <li>
-                Walk blocks forward from the persisted cursor using{" "}
+                Walk blocks forward using{" "}
                 <code className="font-mono text-xs text-phase-green">eth_getBlockByNumber</code>{" "}
                 + <code className="font-mono text-xs text-phase-green">eth_getBlockReceipts</code>.
               </li>
@@ -158,87 +236,80 @@ reward_mon = reward_wei / 10^18`}
                 <code className="font-mono text-xs text-phase-green">
                   gasUsed × (effectiveGasPrice − baseFeePerGas)
                 </code>
-                . That&apos;s the priority fee paid to the block producer.
+                .
               </li>
               <li>
-                Sum all priority fees in the block, attribute to the block&apos;s{" "}
+                Sum per block, attribute to the block&apos;s{" "}
                 <code className="font-mono text-xs text-phase-green">miner</code>{" "}
-                address.
-              </li>
-              <li>
-                Resolve miner address → validator id via the{" "}
-                <code className="font-mono text-xs text-phase-green">miner_aliases</code>{" "}
-                table. Most validators produce blocks directly from their
-                staking auth address, but some route block production
-                through a distributor contract. For unknown miners, we
-                read the contract&apos;s storage slot 0 — distributor
-                contracts encode the validator&apos;s authAddress in the
-                lower 20 bytes — and auto-create the alias.
+                address. Resolve miner → validator id via{" "}
+                <code className="font-mono text-xs text-phase-green">miner_aliases</code>;
+                for unknown miners we read the contract&apos;s storage slot 0
+                (distributor contracts encode the validator&apos;s authAddress
+                in the lower 20 bytes) and auto-create the alias.
               </li>
               <li>
                 Aggregate per (epoch, miner) into{" "}
-                <code className="font-mono text-xs text-phase-green">epoch_priority_fees</code>
-                . Income API joins through{" "}
-                <code className="font-mono text-xs text-phase-green">miner_aliases</code>{" "}
-                so a validator with multiple miner addresses sees the union.
+                <code className="font-mono text-xs text-phase-green">epoch_priority_fees</code>.
+                Endpoints join through the alias table so a validator with
+                multiple miner addresses sees the union.
               </li>
             </ol>
-            <p>
-              Monad runs a flat 100 gwei base fee (verified across hundreds
-              of blocks); we still read it from every block in case it
-              changes.
-            </p>
           </div>
         </section>
 
-        {/* ── Production efficiency ──────────────────────────────────── */}
+        {/* ── APY (delegator-facing) ─────────────────────────────────── */}
         <section className="mb-10">
           <h2 className="mb-4 font-display text-lg text-cream tracking-wide">
-            Block production efficiency
+            APY on the validator leaderboard
           </h2>
           <div className="rounded-xl border border-cream-8 bg-cream-5 p-5 text-sm font-body text-cream-60 leading-relaxed space-y-3">
             <p>
-              Monad&apos;s staking precompile does <em>not</em> expose
-              per-validator vote credits, skip rate, or expected leader
-              slots. We verified this against the official precompile
-              spec — only stake/reward state is queryable.
-            </p>
-            <p>
-              As the closest available proxy, we compute{" "}
-              <strong className="text-cream">stake-weighted production efficiency</strong>:
+              The leaderboard at{" "}
+              <Link href="/stake" className="text-phase-green hover:underline">
+                /stake
+              </Link>{" "}
+              shows pool APY and delegator APY for shopping a validator.
+              These are realized yields measured from the precompile&apos;s{" "}
+              <code className="font-mono text-xs text-phase-green">accRewardPerToken</code>{" "}
+              accumulator, not projections:
             </p>
             <pre className="rounded-md border border-cream-8 bg-dark p-3 text-xs font-mono text-cream overflow-x-auto">
-{`expected_blocks = total_blocks_in_epoch × (stake / network_stake)
-efficiency      = actual_blocks / expected_blocks`}
+{`reward_wei      = (acc_new − acc_old) × stake_wei / 10^36
+yield_per_epoch = reward_wei / stake_wei / epoch_span
+pool_apy        = yield_per_epoch × 4.36 × 365 × 100
+delegator_apy   = pool_apy × (1 − commission_rate)`}
             </pre>
             <p>
-              Above 1.0 = outperforming stake share; below = underperforming.
-              Numbers are derived from the same indexed block data, so
-              they&apos;re only as complete as the indexer&apos;s coverage
-              of the epoch.
+              The accumulator is the on-chain ledger of every block reward
+              the pool has ever earned. Annualizing the recent slope gives a
+              measured yield, not a forecast.
             </p>
           </div>
         </section>
 
-        {/* ── Realized vs projected ──────────────────────────────────── */}
+        {/* ── Simulator ──────────────────────────────────────────────── */}
         <section className="mb-10">
           <h2 className="mb-4 font-display text-lg text-cream tracking-wide flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-phase-green" />
-            Realized vs projected
+            What the delegator simulator does
           </h2>
           <div className="rounded-xl border border-cream-8 bg-cream-5 p-5 text-sm font-body text-cream-60 leading-relaxed space-y-3">
             <p>
-              We never report unrealized epochs as income. Snapshots are
-              taken only outside the staking precompile&apos;s delay period,
-              and every income figure is computed against a completed
-              epoch boundary.
+              The page at{" "}
+              <Link href="/simulate" className="text-phase-green hover:underline">
+                /simulate
+              </Link>{" "}
+              <strong className="text-cream">is</strong> a projection — it
+              estimates a delegator&apos;s future cumulative MON given the
+              recent observed yield distribution. It&apos;s explicitly
+              labeled as a forward simulator and uses percentile bands to
+              show the spread of outcomes. It is not income tracking.
             </p>
             <p>
-              Run-rate fields (per-day / per-month / per-year) are{" "}
-              <strong className="text-cream">extrapolations</strong> from
-              the observed average — useful for comparison but not a
-              guarantee. SVT.one&apos;s discipline of separating realized
-              earnings from projections is the model we follow.
+              All other pages (validator detail, leaderboards, reports) use
+              real on-chain claim events for income reporting. Don&apos;t
+              confuse the simulator&apos;s P50/P10/P90 numbers with realized
+              earnings.
             </p>
           </div>
         </section>
@@ -253,28 +324,32 @@ efficiency      = actual_blocks / expected_blocks`}
             <ul className="ml-5 list-disc space-y-2">
               <li>
                 <strong className="text-cream">History depth.</strong>{" "}
-                Tracker started indexing recently — historical priority fee
-                coverage only extends as far back as the indexer has
-                walked.
+                Claim events are indexed from when the indexer started.
+                Older claims that happened before that window aren&apos;t in
+                the database, but are reflected in{" "}
+                <code className="font-mono text-xs text-phase-green">currentUnclaimedRewards</code>{" "}
+                if the validator hadn&apos;t claimed yet, or are absent
+                otherwise. Forward indexing fills in real time.
               </li>
               <li>
-                <strong className="text-cream">Miner coverage.</strong>{" "}
-                Some block producer addresses are EOAs not in the staking
-                precompile&apos;s active set. Their blocks are still
-                indexed — their fees just aren&apos;t attributed to a
-                validator id until manually mapped.
-              </li>
-              <li>
-                <strong className="text-cream">Indexer lag.</strong> The
-                live cursor lags the chain head by however long it takes
-                the GitHub Actions scheduler to fire. Status badge above
-                shows current lag.
+                <strong className="text-cream">Indexer lag.</strong> A
+                GitHub Actions cron pings the indexer every 5 minutes. New
+                claim events show up within that window.
               </li>
               <li>
                 <strong className="text-cream">USD valuation.</strong>{" "}
-                MON/USD price is captured per epoch from a single oracle
-                source. Historical USD figures use the price snapshot
-                contemporaneous with that epoch.
+                MON/USD prices are from CoinGecko. Per-claim FX uses the
+                daily price closest to the claim&apos;s block timestamp.
+              </li>
+              <li>
+                <strong className="text-cream">Production efficiency.</strong>{" "}
+                Monad&apos;s precompile doesn&apos;t expose per-validator
+                vote credits or expected leader slots. We approximate it as{" "}
+                <code className="font-mono text-xs text-phase-green">
+                  actual_blocks / (network_blocks × stake_share)
+                </code>{" "}
+                from the block indexer&apos;s coverage. Above 1.0 =
+                outperforming stake share.
               </li>
             </ul>
           </div>

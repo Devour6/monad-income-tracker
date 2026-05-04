@@ -21,42 +21,20 @@ import { sql, eq, inArray, asc, desc, and, gte, lte } from "drizzle-orm";
  * NO accumulator math. NO commission rate × pool projection. NO timing
  * approximations. Just a query of every claim transaction the validator
  * has signed and submitted on-chain.
- *
- * Public API consumers
- * --------------------
- * - getRealizedIncome(validatorId) — single validator
- * - getRealizedIncomeBatch(ids)    — batched for leaderboard/compare
- *
- * Both return commission income only. Priority fees and self-stake
- * delegator yield are tracked separately.
  */
 
 const WEI = BigInt(10) ** BigInt(18);
 
 export interface RealizedIncome {
   validatorId: number;
-  /** Earliest claim block we have for this validator (null if no claims yet). */
   firstClaimBlock: bigint | null;
-  /** Latest claim block. */
   lastClaimBlock: bigint | null;
-  /** Number of claim() events the validator has issued. */
   claimCount: number;
-  /** Sum of all claim amounts ever paid out, in MON. */
   totalClaimedMon: number;
-  /** Currently sitting in the precompile, claimable any time. */
   currentUnclaimedMon: number;
-  /**
-   * Lifetime commission = totalClaimed + currentUnclaimed.
-   * This is what the validator has actually earned, period.
-   */
+  /** Lifetime commission = totalClaimed + currentUnclaimed. */
   totalCommissionMon: number;
-  /**
-   * Backward-compat fields for callers that pre-date the claim-event indexer.
-   * `firstEpoch` / `lastEpoch` are now the epoch bounds of the validator's
-   * snapshot history (used for "since X" labeling), `snapshotCount` is the
-   * count of epoch_snapshots rows, and `totalPoolMon` is kept as 0 (the
-   * old pool×rate projection is gone — we don't compute it anymore).
-   */
+  /** Backward-compat for callers that pre-date claim_events. */
   firstEpoch: number | null;
   lastEpoch: number | null;
   snapshotCount: number;
@@ -68,12 +46,25 @@ function weiToMon(wei: bigint): number {
 }
 
 /**
- * Query the latest unclaimed balance + epoch bounds for one validator
- * from epoch_snapshots. Returns zeros if the validator has no snapshots.
+ * Build a parameterized SQL IN-list from a JS array of integers. Drizzle's
+ * `${arr}` interpolation in template `sql` doesn't auto-cast a JS array to
+ * `int[]` for use with PG's `ANY()` operator, so the prior approach
+ * (`WHERE x = ANY(${ids})`) failed at runtime with
+ * `op ANY/ALL (array) requires array on right side`. Using sql.join with
+ * scalar parameters gives us a normal `IN (?, ?, ?)` clause that always
+ * binds correctly regardless of driver.
  */
-async function getValidatorSnapshotMeta(
-  validatorId: number
-): Promise<{
+function inListInt(ids: number[]) {
+  // ids must already be validated as integers by callers (URL parser).
+  // sql.join handles parameter binding safely.
+  return sql.join(
+    ids.map((n) => sql`${n}`),
+    sql.raw(", ")
+  );
+}
+
+/** Latest unclaimed balance + epoch bounds for one validator. */
+async function getValidatorSnapshotMeta(validatorId: number): Promise<{
   unclaimedWei: bigint;
   firstEpoch: number | null;
   lastEpoch: number | null;
@@ -118,7 +109,6 @@ async function getValidatorSnapshotMeta(
 export async function getRealizedIncome(
   validatorId: number
 ): Promise<RealizedIncome> {
-  // Get auth address.
   const [meta] = await db
     .select({ authAddress: validators.authAddress })
     .from(validators)
@@ -141,8 +131,6 @@ export async function getRealizedIncome(
     };
   }
 
-  // Sum every ClaimRewards event where the delegator is the validator's
-  // auth address. That's the validator paying themselves their commission.
   const auth = meta.authAddress.toLowerCase();
   const aggRows = (await db
     .select({
@@ -191,12 +179,28 @@ export async function getRealizedIncome(
   };
 }
 
+interface RawRows {
+  rows?: unknown[];
+}
+function rowsOf<T>(result: unknown): T[] {
+  // drizzle's neon driver returns either array or {rows: array}. Normalize.
+  const r = result as RawRows;
+  if (Array.isArray(r?.rows)) return r.rows as T[];
+  if (Array.isArray(result)) return result as T[];
+  return [];
+}
+
 /** Batched lookup for leaderboard/compare endpoints. */
 export async function getRealizedIncomeBatch(
   validatorIds: number[]
 ): Promise<Map<number, RealizedIncome>> {
   const out = new Map<number, RealizedIncome>();
   if (validatorIds.length === 0) return out;
+
+  // Validate every id is a finite int — defensive, callers should already
+  // have parsed via parseInt + filter, but inListInt does no escaping.
+  const safeIds = validatorIds.filter((n) => Number.isInteger(n) && n >= 0);
+  if (safeIds.length === 0) return out;
 
   // 1. auth addresses
   const valRows = await db
@@ -205,16 +209,16 @@ export async function getRealizedIncomeBatch(
       authAddress: validators.authAddress,
     })
     .from(validators)
-    .where(inArray(validators.validatorId, validatorIds));
+    .where(inArray(validators.validatorId, safeIds));
   const authMap = new Map<number, string>();
   for (const r of valRows) {
     authMap.set(r.validatorId, r.authAddress.toLowerCase());
   }
 
   // 2. aggregate claim_events per validator (only where delegator == auth).
-  // We do a SQL-side filter joining against the validators table to keep
-  // delegator-only claims out of the commission sum.
-  const claimRows = (await db.execute(sql`
+  // The JOIN on validators ensures we sum only the validator's own claims,
+  // not third-party delegators claiming their stake yield.
+  const claimRowsRaw = await db.execute(sql`
     SELECT
       ce.validator_id AS validator_id,
       COALESCE(SUM(ce.amount_wei), 0)::text AS total_wei,
@@ -225,52 +229,22 @@ export async function getRealizedIncomeBatch(
     INNER JOIN validators v
       ON v.validator_id = ce.validator_id
       AND LOWER(v.auth_address) = ce.delegator
-    WHERE ce.validator_id = ANY(${validatorIds})
+    WHERE ce.validator_id IN (${inListInt(safeIds)})
     GROUP BY ce.validator_id
-  `)) as unknown as {
-    rows: Array<{
-      validator_id: number;
-      total_wei: string;
-      cnt: number;
-      first_blk: string;
-      last_blk: string;
-    }>;
-  };
-
-  const claimAgg = new Map<
-    number,
-    {
-      totalWei: bigint;
-      cnt: number;
-      first: bigint;
-      last: bigint;
-    }
-  >();
-  // drizzle's sql.execute returns either an array directly OR { rows: [...] }
-  // depending on driver. Normalize.
-  const rowsAny = (claimRows as unknown as { rows?: unknown[] }).rows;
-  const rowsList: Array<{
+  `);
+  const claimRows = rowsOf<{
     validator_id: number;
     total_wei: string;
     cnt: number;
     first_blk: string;
     last_blk: string;
-  }> = Array.isArray(rowsAny)
-    ? (rowsAny as Array<{
-        validator_id: number;
-        total_wei: string;
-        cnt: number;
-        first_blk: string;
-        last_blk: string;
-      }>)
-    : (claimRows as unknown as Array<{
-        validator_id: number;
-        total_wei: string;
-        cnt: number;
-        first_blk: string;
-        last_blk: string;
-      }>);
-  for (const r of rowsList) {
+  }>(claimRowsRaw);
+
+  const claimAgg = new Map<
+    number,
+    { totalWei: bigint; cnt: number; first: bigint; last: bigint }
+  >();
+  for (const r of claimRows) {
     claimAgg.set(Number(r.validator_id), {
       totalWei: BigInt(r.total_wei),
       cnt: Number(r.cnt),
@@ -279,71 +253,46 @@ export async function getRealizedIncomeBatch(
     });
   }
 
-  // 3. latest unclaimed balance + epoch bounds per validator. Window
-  //    function pulls the latest snapshot row, plus a separate aggregate
-  //    for the snapshot count and epoch bounds.
-  const unclaimedRowsRaw = (await db.execute(sql`
+  // 3. latest unclaimed balance per validator + snapshot epoch bounds.
+  const unclaimedRowsRaw = await db.execute(sql`
     SELECT validator_id, unclaimed_rewards
     FROM (
       SELECT validator_id, unclaimed_rewards,
         ROW_NUMBER() OVER (PARTITION BY validator_id ORDER BY epoch DESC) AS rn
       FROM epoch_snapshots
-      WHERE validator_id = ANY(${validatorIds})
+      WHERE validator_id IN (${inListInt(safeIds)})
     ) t
     WHERE rn = 1
-  `)) as unknown as { rows?: unknown[] };
-  const unclaimedRowsList: Array<{
+  `);
+  const unclaimedRows = rowsOf<{
     validator_id: number;
     unclaimed_rewards: string;
-  }> = Array.isArray(
-    (unclaimedRowsRaw as { rows?: unknown[] }).rows
-  )
-    ? ((unclaimedRowsRaw as { rows: unknown[] }).rows as Array<{
-        validator_id: number;
-        unclaimed_rewards: string;
-      }>)
-    : (unclaimedRowsRaw as unknown as Array<{
-        validator_id: number;
-        unclaimed_rewards: string;
-      }>);
-
+  }>(unclaimedRowsRaw);
   const unclaimedMap = new Map<number, bigint>();
-  for (const r of unclaimedRowsList) {
+  for (const r of unclaimedRows) {
     unclaimedMap.set(Number(r.validator_id), BigInt(r.unclaimed_rewards));
   }
 
-  const snapAggRaw = (await db.execute(sql`
+  const snapAggRaw = await db.execute(sql`
     SELECT validator_id,
       COUNT(*)::int AS cnt,
       MIN(epoch)::int AS min_e,
       MAX(epoch)::int AS max_e
     FROM epoch_snapshots
-    WHERE validator_id = ANY(${validatorIds})
+    WHERE validator_id IN (${inListInt(safeIds)})
     GROUP BY validator_id
-  `)) as unknown as { rows?: unknown[] };
-  const snapAggList: Array<{
+  `);
+  const snapAggRows = rowsOf<{
     validator_id: number;
     cnt: number;
     min_e: number;
     max_e: number;
-  }> = Array.isArray((snapAggRaw as { rows?: unknown[] }).rows)
-    ? ((snapAggRaw as { rows: unknown[] }).rows as Array<{
-        validator_id: number;
-        cnt: number;
-        min_e: number;
-        max_e: number;
-      }>)
-    : (snapAggRaw as unknown as Array<{
-        validator_id: number;
-        cnt: number;
-        min_e: number;
-        max_e: number;
-      }>);
+  }>(snapAggRaw);
   const snapMetaMap = new Map<
     number,
     { cnt: number; minE: number; maxE: number }
   >();
-  for (const r of snapAggList) {
+  for (const r of snapAggRows) {
     snapMetaMap.set(Number(r.validator_id), {
       cnt: Number(r.cnt),
       minE: Number(r.min_e),
@@ -352,7 +301,7 @@ export async function getRealizedIncomeBatch(
   }
 
   // 4. assemble
-  for (const id of validatorIds) {
+  for (const id of safeIds) {
     const agg = claimAgg.get(id);
     const unclaimedWei = unclaimedMap.get(id) ?? BigInt(0);
     const totalClaimedWei = agg?.totalWei ?? BigInt(0);
@@ -377,10 +326,7 @@ export async function getRealizedIncomeBatch(
   return out;
 }
 
-/**
- * Per-claim-event detail for a validator — used by the dashboard to render
- * the claim history table. Returns most recent first.
- */
+/** Per-claim-event detail for the dashboard claim history table. */
 export interface ClaimEventDetail {
   blockNumber: bigint;
   timestamp: Date;
@@ -434,6 +380,4 @@ export async function getClaimEvents(
   }));
 }
 
-// Re-export asc so callers that imported from drizzle-orm don't need to
-// also import the sort helpers from realized-income.
 export { asc };
