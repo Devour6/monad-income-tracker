@@ -1,31 +1,43 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
-  validators,
+  epochSnapshots,
   networkEpochs,
+  validators,
   epochPriorityFees,
   minerAliases,
-  epochSnapshots,
 } from "@/lib/db/schema";
 import { claimEvents } from "@/lib/db/claim-events-schema";
-import { and, asc, eq, gte, inArray, lte, sql, desc } from "drizzle-orm";
+import { eq, asc, inArray, sql, and, gte, lte } from "drizzle-orm";
 import { getLiveMonPrice } from "@/lib/price";
 
 /**
  * GET /api/v1/validators/[id]/realized-report
  *
- * Income tracker, not income model. Each row in the response corresponds to
- * a real on-chain ClaimRewards event the validator has signed. Summary
- * totals = sum(claim amounts) + currently unclaimed.
- *
- * No accumulator math, no commission rate × pool projection. Just claim
- * transactions filtered by validator and (optionally) date window.
+ * Real on-chain income report for a validator. Source data:
+ *   - claim_events  → every ClaimRewards tx where the auth address claimed
+ *                     commission. Sum = lifetime claimed.
+ *   - epoch_snapshots → per-epoch unclaimedRewards balance + stake +
+ *                     commission rate. Used to (a) anchor the window in
+ *                     epoch space, (b) populate every epoch in the table
+ *                     so the user sees a full row even when no claim
+ *                     happened, (c) provide currentUnclaimed for the
+ *                     lifetime total.
+ *   - epoch_priority_fees → priority fees for any block this validator
+ *                     produced in the window.
  *
  * Query params:
  *   format=json|csv               — default json
- *   fromDate=ISO  toDate=ISO      — optional window restriction (block_timestamp)
+ *   fromDate=ISO  toDate=ISO      — optional window restriction
+ *   fromEpoch=N   toEpoch=N       — alternative window restriction
  *   fx=per-epoch|end-of-period    — FX methodology (default per-epoch)
  *   serverCostUsd=N               — monthly USD operating cost, prorated
+ *
+ * Per-epoch commission accrual is computed as the change in unclaimedRewards
+ * across consecutive snapshots, plus any claims that happened in that epoch.
+ * That's the literal on-chain delta — not modeling. Lifetime sum across all
+ * epochs equals (lastUnclaimed − firstUnclaimed) + Σ claims, which by
+ * construction = currentUnclaimed + totalClaimed = lifetime commission.
  */
 export async function GET(
   req: Request,
@@ -47,6 +59,8 @@ export async function GET(
     0,
     Number(url.searchParams.get("serverCostUsd") || "0") || 0
   );
+  const fromEpochParam = url.searchParams.get("fromEpoch");
+  const toEpochParam = url.searchParams.get("toEpoch");
   const fromDate = url.searchParams.get("fromDate");
   const toDate = url.searchParams.get("toDate");
 
@@ -63,178 +77,281 @@ export async function GET(
 
     const auth = meta.authAddress.toLowerCase();
 
-    // 1. Build claim_events filter.
-    const conds = [
-      eq(claimEvents.validatorId, validatorId),
-      eq(claimEvents.delegator, auth),
-    ];
-    if (fromDate) {
-      const t = new Date(fromDate);
-      if (!Number.isNaN(t.getTime())) {
-        conds.push(gte(claimEvents.blockTimestamp, t));
-      }
-    }
-    if (toDate) {
-      const t = new Date(toDate);
-      if (!Number.isNaN(t.getTime())) {
-        // make `to` inclusive of the entire day
-        t.setHours(23, 59, 59, 999);
-        conds.push(lte(claimEvents.blockTimestamp, t));
-      }
+    // Pull every snapshot for this validator (epoch-asc).
+    const allSnaps = await db
+      .select()
+      .from(epochSnapshots)
+      .where(eq(epochSnapshots.validatorId, validatorId))
+      .orderBy(asc(epochSnapshots.epoch));
+
+    if (allSnaps.length === 0) {
+      return NextResponse.json({
+        validatorId,
+        validator: {
+          validatorId: meta.validatorId,
+          name: meta.name,
+          authAddress: meta.authAddress,
+          commissionPct: meta.commissionPct ? Number(meta.commissionPct) : 0,
+          stakeMon: meta.stakeMon ? Number(meta.stakeMon) : 0,
+        },
+        window: {
+          fromEpoch: 0,
+          toEpoch: 0,
+          epochSpan: 0,
+          daysObserved: 0,
+          firstTimestamp: null,
+          lastTimestamp: null,
+        },
+        summary: null,
+        epochs: [],
+        claims: [],
+        claimEvents: [],
+        note: "No snapshots for this validator yet.",
+      });
     }
 
-    // 2. Pull every claim event in the window.
-    const claims = await db
+    // ── Window resolution ────────────────────────────────────────────
+    // Use latest snapshot as our anchor for date↔epoch translation. Real
+    // chain time only lives on recent snapshots (older rows were
+    // backfilled and share their backfill timestamp), so date filters
+    // project epochs at 4.36 epochs/day from the anchor.
+    const EPOCHS_PER_DAY = 4.36;
+    const MS_PER_DAY = 86_400_000;
+    const anchor = allSnaps[allSnaps.length - 1];
+    const anchorMs = anchor.createdAt.getTime();
+    const dateToEpoch = (iso: string): number => {
+      const t = new Date(iso).getTime();
+      const daysAgo = (anchorMs - t) / MS_PER_DAY;
+      return Math.round(anchor.epoch - daysAgo * EPOCHS_PER_DAY);
+    };
+
+    let windowFromEpoch = fromEpochParam ? parseInt(fromEpochParam, 10) : null;
+    let windowToEpoch = toEpochParam ? parseInt(toEpochParam, 10) : null;
+    if (fromDate && windowFromEpoch == null) windowFromEpoch = dateToEpoch(fromDate);
+    if (toDate && windowToEpoch == null) windowToEpoch = dateToEpoch(toDate);
+    if (windowFromEpoch == null) windowFromEpoch = allSnaps[0].epoch;
+    if (windowToEpoch == null) windowToEpoch = allSnaps[allSnaps.length - 1].epoch;
+
+    const inWindow = allSnaps.filter(
+      (s) => s.epoch >= windowFromEpoch! && s.epoch <= windowToEpoch!
+    );
+    if (inWindow.length === 0) {
+      return NextResponse.json({
+        validatorId,
+        validator: {
+          validatorId: meta.validatorId,
+          name: meta.name,
+          authAddress: meta.authAddress,
+          commissionPct: meta.commissionPct ? Number(meta.commissionPct) : 0,
+          stakeMon: meta.stakeMon ? Number(meta.stakeMon) : 0,
+        },
+        window: {
+          fromEpoch: windowFromEpoch,
+          toEpoch: windowToEpoch,
+          epochSpan: windowToEpoch - windowFromEpoch,
+          daysObserved: 0,
+          firstTimestamp: null,
+          lastTimestamp: null,
+        },
+        summary: null,
+        epochs: [],
+        claims: [],
+        claimEvents: [],
+        note: "No snapshots in selected window.",
+      });
+    }
+
+    const isFullWindow = !fromDate && !toDate && fromEpochParam == null && toEpochParam == null;
+    const epochIds = inWindow.map((s) => s.epoch);
+
+    // ── Claims in window (auth-address only) ────────────────────────
+    const claimRowsRaw = await db
       .select({
+        epoch: claimEvents.epoch,
+        amountWei: claimEvents.amountWei,
         blockNumber: claimEvents.blockNumber,
         blockTimestamp: claimEvents.blockTimestamp,
-        amountWei: claimEvents.amountWei,
-        epoch: claimEvents.epoch,
         txHash: claimEvents.txHash,
       })
       .from(claimEvents)
-      .where(and(...conds))
+      .where(
+        and(
+          eq(claimEvents.validatorId, validatorId),
+          eq(claimEvents.delegator, auth),
+          gte(claimEvents.epoch, windowFromEpoch),
+          lte(claimEvents.epoch, windowToEpoch)
+        )
+      )
       .orderBy(asc(claimEvents.blockNumber));
+
+    // ── Historical price map (per-epoch FX) + live price ────────────
+    const priceRows = await db
+      .select()
+      .from(networkEpochs)
+      .where(inArray(networkEpochs.epoch, epochIds));
+    const priceMap = new Map<number, number>();
+    for (const r of priceRows) priceMap.set(r.epoch, Number(r.monPriceUsd) || 0);
+    const live = await getLiveMonPrice().catch(() => ({ price: 0 }));
+    const livePrice = (live as { price: number }).price || 0;
+    const endOfPeriodPrice =
+      priceMap.get(inWindow[inWindow.length - 1].epoch) || livePrice || 0;
+    const fxFor = (epoch: number): number => {
+      if (fx === "end-of-period") return endOfPeriodPrice;
+      const hist = priceMap.get(epoch) ?? 0;
+      return hist > 0 ? hist : livePrice;
+    };
+
+    // ── Priority fees per epoch ─────────────────────────────────────
+    const pfRows = (await db
+      .select({
+        epoch: epochPriorityFees.epoch,
+        feesWei: sql<string>`SUM(CAST(${epochPriorityFees.priorityFeesWei} AS NUMERIC))::TEXT`,
+        blocks: sql<number>`SUM(${epochPriorityFees.blocksProposed})`,
+      })
+      .from(epochPriorityFees)
+      .innerJoin(
+        minerAliases,
+        eq(minerAliases.minerAddress, epochPriorityFees.minerAddress)
+      )
+      .where(
+        and(
+          eq(minerAliases.validatorId, validatorId),
+          inArray(epochPriorityFees.epoch, epochIds)
+        )
+      )
+      .groupBy(epochPriorityFees.epoch)) as unknown as {
+      epoch: number;
+      feesWei: string;
+      blocks: number;
+    }[];
 
     const WEI = BigInt(10) ** BigInt(18);
     const toMon = (wei: bigint) =>
       Number(wei / WEI) + Number(wei % WEI) / Number(WEI);
-
-    // 3. Latest unclaimed balance from snapshots — counted toward total
-    //    only when window is "all time" (no date filter). For date-bound
-    //    windows we report exact in-window claims plus a separate
-    //    `currentUnclaimedMon` field for context.
-    const snapAggRows = (await db
-      .select({
-        cnt: sql<number>`COUNT(*)::int`,
-        minE: sql<number | null>`MIN(${epochSnapshots.epoch})`,
-        maxE: sql<number | null>`MAX(${epochSnapshots.epoch})`,
-        firstTs: sql<Date | null>`MIN(${epochSnapshots.createdAt})`,
-        lastTs: sql<Date | null>`MAX(${epochSnapshots.createdAt})`,
-      })
-      .from(epochSnapshots)
-      .where(eq(epochSnapshots.validatorId, validatorId))) as unknown as {
-      cnt: number;
-      minE: number | null;
-      maxE: number | null;
-      firstTs: Date | null;
-      lastTs: Date | null;
-    }[];
-    const snapAgg = snapAggRows[0];
-
-    const latestSnapRow = await db
-      .select({ unclaimed: epochSnapshots.unclaimedRewards })
-      .from(epochSnapshots)
-      .where(eq(epochSnapshots.validatorId, validatorId))
-      .orderBy(desc(epochSnapshots.epoch))
-      .limit(1);
-    const currentUnclaimedWei =
-      latestSnapRow.length > 0 ? BigInt(latestSnapRow[0].unclaimed) : BigInt(0);
-    const currentUnclaimedMon = toMon(currentUnclaimedWei);
-
-    // 4. Window summary.
-    let totalClaimedWei = BigInt(0);
-    for (const c of claims) {
-      totalClaimedWei += BigInt(c.amountWei);
+    const pfMap = new Map<number, { feesMon: number; blocks: number }>();
+    for (const r of pfRows) {
+      pfMap.set(r.epoch, {
+        feesMon: toMon(BigInt(r.feesWei || "0")),
+        blocks: Number(r.blocks || 0),
+      });
     }
-    const totalClaimedMon = toMon(totalClaimedWei);
 
-    const isFullWindow = !fromDate && !toDate;
-    // For "all time" the lifetime commission = totalClaimed + currentUnclaimed.
-    // For a sliced window we report only the claimed amounts that fell in
-    // the window — adding currentUnclaimed there would mix windows.
-    const totalIncomeMon = isFullWindow
-      ? totalClaimedMon + currentUnclaimedMon
-      : totalClaimedMon;
-
-    // 5. Window timestamps.
-    const firstTs = claims.length > 0 ? claims[0].blockTimestamp : null;
-    const lastTs =
-      claims.length > 0 ? claims[claims.length - 1].blockTimestamp : null;
-    const daysObserved =
-      firstTs && lastTs
-        ? Math.max(
-            0,
-            (lastTs.getTime() - firstTs.getTime()) / 86_400_000
-          )
-        : 0;
-
-    // 6. Historical price map for per-epoch FX. Use the epoch each claim
-    //    landed in for `per-epoch` FX; live price for `end-of-period`.
-    const epochsInWindow = Array.from(
-      new Set(claims.map((c) => c.epoch))
-    );
-    const priceRows =
-      epochsInWindow.length > 0
-        ? await db
-            .select()
-            .from(networkEpochs)
-            .where(inArray(networkEpochs.epoch, epochsInWindow))
-        : [];
-    const priceMap = new Map<number, number>();
-    for (const r of priceRows) {
-      priceMap.set(r.epoch, Number(r.monPriceUsd) || 0);
-    }
-    const live = await getLiveMonPrice().catch(() => ({ price: 0 }));
-    const livePrice = (live as { price: number }).price || 0;
-    const endOfPeriodPrice =
-      claims.length > 0 ? priceMap.get(claims[claims.length - 1].epoch) || livePrice : livePrice;
-
-    // 7. Priority fees in the same window (best-effort).
-    let priorityFeesMon = 0;
-    let priorityFeesUsd = 0;
-    if (snapAgg && snapAgg.minE != null && snapAgg.maxE != null) {
-      // Convert claim window to epoch bounds (best-effort: span first→last claim).
-      let pfFromEpoch = snapAgg.minE;
-      let pfToEpoch = snapAgg.maxE;
-      if (claims.length > 0) {
-        pfFromEpoch = claims[0].epoch;
-        pfToEpoch = claims[claims.length - 1].epoch;
-      }
-      const pfRows = (await db
-        .select({
-          epoch: epochPriorityFees.epoch,
-          feesWei: sql<string>`SUM(CAST(${epochPriorityFees.priorityFeesWei} AS NUMERIC))::TEXT`,
-        })
-        .from(epochPriorityFees)
-        .innerJoin(
-          minerAliases,
-          eq(minerAliases.minerAddress, epochPriorityFees.minerAddress)
-        )
-        .where(
-          and(
-            eq(minerAliases.validatorId, validatorId),
-            gte(epochPriorityFees.epoch, pfFromEpoch),
-            lte(epochPriorityFees.epoch, pfToEpoch)
-          )
-        )
-        .groupBy(epochPriorityFees.epoch)) as unknown as {
-        epoch: number;
-        feesWei: string;
-      }[];
-      for (const r of pfRows) {
-        const wei = BigInt(r.feesWei || "0");
-        const feesMon = toMon(wei);
-        priorityFeesMon += feesMon;
-        const fxPrice =
-          fx === "end-of-period"
-            ? endOfPeriodPrice
-            : priceMap.get(r.epoch) || livePrice;
-        priorityFeesUsd += feesMon * fxPrice;
+    // Group claims by epoch for the per-epoch table
+    const claimsByEpoch = new Map<
+      number,
+      { totalWei: bigint; events: typeof claimRowsRaw }
+    >();
+    for (const c of claimRowsRaw) {
+      const existing = claimsByEpoch.get(c.epoch);
+      const wei = BigInt(c.amountWei);
+      if (existing) {
+        existing.totalWei += wei;
+        existing.events.push(c);
+      } else {
+        claimsByEpoch.set(c.epoch, { totalWei: wei, events: [c] });
       }
     }
 
-    // 8. Per-claim USD valuations.
-    const claimRows = claims.map((c) => {
+    // ── Per-epoch table — every snapshot epoch in window gets a row ──
+    interface EpochRow {
+      epoch: number;
+      timestamp: string;
+      stakeMon: number;
+      commissionPct: number;
+      unclaimedMon: number;
+      commissionMon: number; // accrual this epoch
+      claimedMon: number; // amount claimed in this epoch (if any)
+      priorityFeesMon: number;
+      priorityFeeBlocks: number;
+      fxPriceUsd: number;
+      commissionUsd: number;
+      priorityFeesUsd: number;
+    }
+
+    const epochsArray: EpochRow[] = [];
+    let summaryCommissionMon = 0;
+    let summaryClaimedMon = 0;
+    let summaryCommissionUsd = 0;
+    let summaryPriorityFeesMon = 0;
+    let summaryPriorityFeesUsd = 0;
+
+    // Walk window snapshots, computing commission accrual = change in
+    // unclaimed + amount claimed in that epoch. This matches the on-chain
+    // ledger exactly (no rate × pool projection).
+    const baselineIdx =
+      allSnaps.findIndex((s) => s.epoch >= windowFromEpoch!) - 1;
+    const baseline = baselineIdx >= 0 ? allSnaps[baselineIdx] : null;
+
+    let prevUnclaimed = baseline
+      ? toMon(BigInt(baseline.unclaimedRewards))
+      : toMon(BigInt(inWindow[0].unclaimedRewards));
+    const firstWindowEpoch = baseline ? null : inWindow[0].epoch;
+
+    for (const s of inWindow) {
+      const currUnclaimed = toMon(BigInt(s.unclaimedRewards));
+      const epochClaims = claimsByEpoch.get(s.epoch);
+      const claimedMon = epochClaims ? toMon(epochClaims.totalWei) : 0;
+
+      // Per-epoch commission accrual.
+      // For the first row when we have no baseline, suppress accrual
+      // (we'd be subtracting from nothing; the row reports 0 and
+      // subsequent rows pick up the sequence correctly).
+      const commissionMon =
+        s.epoch === firstWindowEpoch
+          ? 0
+          : currUnclaimed - prevUnclaimed + claimedMon;
+
+      const stakeMon = toMon(BigInt(s.stakeWei));
+      const commissionPctRaw = Number(BigInt(s.commission)) / 1e18;
+      const pf = pfMap.get(s.epoch);
+      const priorityFeesMon = pf?.feesMon ?? 0;
+      const priorityFeeBlocks = pf?.blocks ?? 0;
+      const fxPrice = fxFor(s.epoch);
+      const commissionUsd = commissionMon * fxPrice;
+      const priorityFeesUsd = priorityFeesMon * fxPrice;
+
+      epochsArray.push({
+        epoch: s.epoch,
+        timestamp: s.createdAt.toISOString(),
+        stakeMon,
+        commissionPct: commissionPctRaw * 100,
+        unclaimedMon: currUnclaimed,
+        commissionMon,
+        claimedMon,
+        priorityFeesMon,
+        priorityFeeBlocks,
+        fxPriceUsd: fxPrice,
+        commissionUsd,
+        priorityFeesUsd,
+      });
+
+      summaryCommissionMon += commissionMon;
+      summaryClaimedMon += claimedMon;
+      summaryCommissionUsd += commissionUsd;
+      summaryPriorityFeesMon += priorityFeesMon;
+      summaryPriorityFeesUsd += priorityFeesUsd;
+
+      prevUnclaimed = currUnclaimed;
+    }
+
+    // Window timestamps + days observed (from snapshot epoch span, not claim ts)
+    const firstTs = inWindow[0].createdAt;
+    const lastTs = inWindow[inWindow.length - 1].createdAt;
+    const epochSpan = inWindow[inWindow.length - 1].epoch - inWindow[0].epoch;
+    const daysObserved = epochSpan / EPOCHS_PER_DAY;
+
+    // Server cost prorated over observed days.
+    const serverCostProRatedUsd =
+      (serverCostMonthlyUsd / 30) * Math.max(0, daysObserved);
+
+    // Claim event list for the dashboard's claim history section.
+    const claimRows = claimRowsRaw.map((c) => {
       const amountMon = toMon(BigInt(c.amountWei));
-      const fxPrice =
-        fx === "end-of-period"
-          ? endOfPeriodPrice
-          : priceMap.get(c.epoch) || livePrice;
+      const fxPrice = fxFor(c.epoch);
       return {
-        blockNumber: c.blockNumber.toString(),
-        timestamp: c.blockTimestamp.toISOString(),
         epoch: c.epoch,
+        timestamp: c.blockTimestamp.toISOString(),
+        blockNumber: c.blockNumber.toString(),
         amountMon,
         amountUsd: amountMon * fxPrice,
         fxPriceUsd: fxPrice,
@@ -242,81 +359,50 @@ export async function GET(
       };
     });
 
-    const totalCommissionUsd = claimRows.reduce(
-      (s, r) => s + r.amountUsd,
-      0
-    );
+    // Current pool unclaimed = total pending rewards (validator's commission
+    // + delegators' shares). The validator only owns their pro-rata slice.
+    const lastSnap = inWindow[inWindow.length - 1];
+    const poolUnclaimedWei = BigInt(lastSnap.unclaimedRewards);
+    const poolUnclaimedMon = toMon(poolUnclaimedWei);
+    const lastStakeWei = BigInt(lastSnap.stakeWei);
+    const lastSelfWei = lastSnap.selfStakeWei
+      ? BigInt(lastSnap.selfStakeWei)
+      : BigInt(0);
+    const pendingShareMon =
+      lastStakeWei > BigInt(0) && lastSelfWei > BigInt(0)
+        ? toMon((poolUnclaimedWei * lastSelfWei) / lastStakeWei)
+        : 0;
+    const pendingShareUsd = pendingShareMon * livePrice;
 
-    // Legacy `epochs` array for the dashboard's per-epoch table + chart.
-    // We synthesize it by grouping claims by epoch — every epoch with one or
-    // more claims becomes a row. Epochs with no claims simply don't appear,
-    // which is correct: the validator earned no realized income in those
-    // epochs (only unrealized accumulator growth, which we deliberately do
-    // not project).
-    interface LegacyEpochRow {
-      epoch: number;
-      timestamp: string;
-      stakeMon: number;
-      commissionPct: number;
-      commissionMon: number;
-      claimedMon: number;
-      priorityFeesMon: number;
-      fxPriceUsd: number;
-      commissionUsd: number;
-      priorityFeesUsd: number;
-      unclaimedMon: number;
-    }
-    const epochRowsMap = new Map<number, LegacyEpochRow>();
-    for (const r of claimRows) {
-      const existing = epochRowsMap.get(r.epoch);
-      if (existing) {
-        existing.commissionMon += r.amountMon;
-        existing.commissionUsd += r.amountUsd;
-        existing.claimedMon += r.amountMon;
-      } else {
-        epochRowsMap.set(r.epoch, {
-          epoch: r.epoch,
-          timestamp: r.timestamp,
-          stakeMon: meta.stakeMon ? Number(meta.stakeMon) : 0,
-          commissionPct: meta.commissionPct ? Number(meta.commissionPct) : 0,
-          commissionMon: r.amountMon,
-          claimedMon: r.amountMon,
-          priorityFeesMon: 0,
-          fxPriceUsd: r.fxPriceUsd,
-          commissionUsd: r.amountUsd,
-          priorityFeesUsd: 0,
-          unclaimedMon: 0,
-        });
-      }
-    }
-    const epochsArray = Array.from(epochRowsMap.values()).sort(
-      (a, b) => a.epoch - b.epoch
-    );
-
-    // 9. Server cost pro-rated over claim-window days.
-    const serverCostProRatedUsd =
-      (serverCostMonthlyUsd / 30) * Math.max(0, daysObserved);
-    // Mirror the totalIncomeMon formula: lifetime view includes currentUnclaimed,
-    // sliced windows do not (they'd mix periods).
-    const totalIncomeUsd =
-      totalCommissionUsd +
-      priorityFeesUsd +
-      (isFullWindow ? currentUnclaimedMon * livePrice : 0);
+    // Lifetime view: total = claimed (auth-address ClaimRewards events) +
+    // pending share (validator's pro-rata slice of pool, NOT the whole pool).
+    // Sliced window: total = per-epoch claims + priority fees in that window.
+    const totalIncomeMon = isFullWindow
+      ? summaryClaimedMon + pendingShareMon + summaryPriorityFeesMon
+      : summaryClaimedMon + summaryPriorityFeesMon;
+    const totalIncomeUsd = isFullWindow
+      ? summaryClaimedMon * livePrice + pendingShareUsd + summaryPriorityFeesUsd
+      : summaryCommissionUsd + summaryPriorityFeesUsd;
     const netUsd = totalIncomeUsd - serverCostProRatedUsd;
 
     const summary = {
-      claimCount: claims.length,
-      commissionMon: totalClaimedMon,
-      commissionUsd: totalCommissionUsd,
-      priorityFeesMon,
-      priorityFeesUsd,
-      // Legacy aliases for the existing dashboard UI:
-      // - `claimedMon`  = total MON claimed in the window (same as commissionMon).
-      // - `unclaimedMon` = currently unclaimed (same as currentUnclaimedMon).
-      claimedMon: totalClaimedMon,
-      unclaimedMon: currentUnclaimedMon,
-      currentUnclaimedMon,
-      currentUnclaimedUsd: currentUnclaimedMon * livePrice,
+      claimCount: claimRows.length,
+      commissionMon: isFullWindow
+        ? summaryClaimedMon + pendingShareMon
+        : summaryClaimedMon,
+      commissionUsd: isFullWindow
+        ? summaryClaimedMon * livePrice + pendingShareUsd
+        : summaryClaimedMon * livePrice,
+      priorityFeesMon: summaryPriorityFeesMon,
+      priorityFeesUsd: summaryPriorityFeesUsd,
+      claimedMon: summaryClaimedMon,
+      // unclaimedMon now reports the validator's PRO-RATA share, not the
+      // full pool. The full pool is exposed separately as poolUnclaimedMon.
+      unclaimedMon: pendingShareMon,
+      currentUnclaimedMon: pendingShareMon,
+      currentUnclaimedUsd: pendingShareUsd,
+      poolUnclaimedMon,
+      poolUnclaimedUsd: poolUnclaimedMon * livePrice,
       totalIncomeMon,
       totalIncomeUsd,
       serverCostMonthlyUsd,
@@ -329,53 +415,59 @@ export async function GET(
     };
 
     if (format === "csv") {
-      const validatorName = meta.name || `Validator #${validatorId}`;
       const lines: string[] = [];
-      lines.push(`# Monad Validator Income Report — Real on-chain claims`);
+      const validatorName = meta.name || `Validator #${validatorId}`;
+      lines.push(`# Monad Validator Income Report (Realized)`);
       lines.push(`# Validator: ${validatorName} (#${validatorId})`);
       lines.push(`# Auth: ${meta.authAddress}`);
       lines.push(
-        `# Window: ${firstTs ? firstTs.toISOString() : "(no claims)"} → ${
-          lastTs ? lastTs.toISOString() : "(no claims)"
-        }`
+        `# Window: epochs ${inWindow[0].epoch}-${inWindow[inWindow.length - 1].epoch} (${firstTs.toISOString()} → ${lastTs.toISOString()})`
       );
       lines.push(`# Days observed: ${daysObserved.toFixed(2)}`);
-      lines.push(`# Claim count: ${claims.length}`);
       lines.push(`# FX: ${fx}`);
       lines.push(``);
       lines.push(
         [
-          "block_number",
-          "timestamp",
           "epoch",
-          "amount_mon",
+          "timestamp",
+          "stake_mon",
+          "commission_pct",
+          "unclaimed_mon",
+          "commission_mon",
+          "claimed_mon",
+          "priority_fees_mon",
+          "priority_fee_blocks",
           "fx_price_usd",
-          "amount_usd",
-          "tx_hash",
+          "commission_usd",
+          "priority_fees_usd",
         ].join(",")
       );
-      for (const r of claimRows) {
+      for (const e of epochsArray) {
         lines.push(
           [
-            r.blockNumber,
-            r.timestamp,
-            r.epoch,
-            r.amountMon,
-            r.fxPriceUsd,
-            r.amountUsd,
-            r.txHash,
+            e.epoch,
+            e.timestamp,
+            e.stakeMon,
+            e.commissionPct.toFixed(2),
+            e.unclaimedMon,
+            e.commissionMon,
+            e.claimedMon,
+            e.priorityFeesMon,
+            e.priorityFeeBlocks,
+            e.fxPriceUsd,
+            e.commissionUsd,
+            e.priorityFeesUsd,
           ].join(",")
         );
       }
       lines.push(``);
       lines.push(`# Summary`);
-      lines.push(`# Claimed (window) MON: ${summary.commissionMon}`);
-      lines.push(`# Claimed (window) USD: ${summary.commissionUsd}`);
+      lines.push(`# Commission MON: ${summary.commissionMon}`);
+      lines.push(`# Commission USD: ${summary.commissionUsd}`);
       lines.push(`# Priority fees MON: ${summary.priorityFeesMon}`);
       lines.push(`# Priority fees USD: ${summary.priorityFeesUsd}`);
-      lines.push(`# Currently unclaimed MON: ${summary.currentUnclaimedMon}`);
-      lines.push(`# Total income MON: ${summary.totalIncomeMon}`);
-      lines.push(`# Total income USD: ${summary.totalIncomeUsd}`);
+      lines.push(`# Claimed MON: ${summary.claimedMon}`);
+      lines.push(`# Unclaimed MON: ${summary.unclaimedMon}`);
       lines.push(`# Server cost USD (prorated): ${summary.serverCostProRatedUsd}`);
       lines.push(`# Net USD: ${summary.netUsd}`);
 
@@ -383,7 +475,7 @@ export async function GET(
         status: 200,
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": `attachment; filename="validator-${validatorId}-income.csv"`,
+          "Content-Disposition": `attachment; filename="validator-${validatorId}-realized-report.csv"`,
           "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300",
         },
       });
@@ -399,17 +491,16 @@ export async function GET(
         stakeMon: meta.stakeMon ? Number(meta.stakeMon) : 0,
       },
       window: {
-        firstTimestamp: firstTs ? firstTs.toISOString() : null,
-        lastTimestamp: lastTs ? lastTs.toISOString() : null,
+        fromEpoch: inWindow[0].epoch,
+        toEpoch: inWindow[inWindow.length - 1].epoch,
+        epochSpan,
         daysObserved,
-        snapshotFirstEpoch: snapAgg?.minE ?? null,
-        snapshotLastEpoch: snapAgg?.maxE ?? null,
+        firstTimestamp: firstTs.toISOString(),
+        lastTimestamp: lastTs.toISOString(),
       },
       summary,
-      claims: claimRows,
-      // Legacy field consumed by the dashboard's per-epoch chart + table.
-      // Each entry corresponds to one or more claim events in that epoch.
       epochs: epochsArray,
+      claims: claimRows,
       claimEvents: claimRows.map((r) => ({
         epoch: r.epoch,
         timestamp: r.timestamp,
@@ -423,9 +514,9 @@ export async function GET(
       "public, s-maxage=60, stale-while-revalidate=300"
     );
     return response;
-  } catch (error) {
+  } catch (err) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: err instanceof Error ? err.message : String(err) },
       { status: 500 }
     );
   }
