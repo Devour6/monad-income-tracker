@@ -444,32 +444,51 @@ export async function GET(
     // For Phase: total auth claimed = 76,414. Total pool earned = ~370K.
     // Empirical share = 20.6% — matches their observed commission rate.
     // Lifetime earned = 76,414 + (9,250 × 0.206) ≈ 78,320 MON.
-    // ── Per-epoch validator share (Monad protocol formula) ──────────
+    // ── Lifetime earned (anchored to on-chain truth) ────────────────
     //
-    // Per the staking-precompile docs:
-    //   syscallReward(leader, fee_recipient, reward, priority_fee):
-    //     1. commission = reward × commission_rate                  → leader
-    //     2. delegator_pool = reward − commission                   → distributed pro-rata
-    //     3. priority_fee → fee_recipient (handled separately by our block indexer)
+    // Two anchors:
+    //   (a) sum of auth-address ClaimRewards events — literal on-chain
+    //       MON paid to the validator's wallet. Exact, no math.
+    //   (b) auth address's share of currently pending pool. Per the
+    //       Monad reward formula:
+    //         pendingShare = poolUnclaimed × commissionRate
+    //                      + poolUnclaimed × (1 − commissionRate)
+    //                                       × (selfStake / totalStake)
     //
-    // The validator's auth address is itself a delegator with its self-stake,
-    // so it earns commission + (its pro-rata share of the delegator pool):
-    //
-    //   validatorShare = poolEarned × commRate
-    //                  + poolEarned × (1 − commRate) × (selfStake / totalStake)
-    //
-    // Sum across all epochs in the window = lifetime earned.
-    // For a validator who has claimed, this should be very close to their
-    // sum-of-claims + pro-rata-of-current-pending. We verified ~3% accuracy
-    // on Phase Stake (74.5K formula vs 76.4K actual claimed).
+    // Lifetime earned = (a) + (b). Per-epoch validator share is then
+    // distributed proportionally to that epoch's pool growth, so the
+    // sum across all epochs equals lifetime earned (matches on-chain
+    // claims + pending share exactly).
+    let totalPoolEarnedMon = 0;
+    for (const r of epochsArray) totalPoolEarnedMon += r.poolEarnedMon;
+
+    const lastSnapForShare = inWindow[inWindow.length - 1];
+    const lastStakeWei = BigInt(lastSnapForShare.stakeWei);
+    const lastSelfWei = lastSnapForShare.selfStakeWei
+      ? BigInt(lastSnapForShare.selfStakeWei)
+      : BigInt(0);
+    const lastUnclaimed = toMon(BigInt(lastSnapForShare.unclaimedRewards));
+    const lastCommissionRate =
+      Number(BigInt(lastSnapForShare.commission)) / 1e18;
+    const selfStakeFraction =
+      lastStakeWei > BigInt(0) && lastSelfWei > BigInt(0)
+        ? Number(lastSelfWei) / Number(lastStakeWei)
+        : 0;
+    const proRataPendingShare =
+      lastUnclaimed * lastCommissionRate +
+      lastUnclaimed * (1 - lastCommissionRate) * selfStakeFraction;
+
+    const totalAuthEarnedMon = summaryClaimedMon + proRataPendingShare;
+
+    // Empirical scalar to back-fill per-epoch validator share.
+    // For multi-claim validators: dominated by actual claims, ~3% accurate.
+    // For zero-claim validators: dominated by pendingShare estimate.
+    const empiricalShare =
+      totalPoolEarnedMon > 0 ? totalAuthEarnedMon / totalPoolEarnedMon : 0;
     let summaryCommissionMon = 0;
     let summaryCommissionUsd = 0;
     for (const r of epochsArray) {
-      const commRate = r.commissionPct / 100;
-      const selfFrac = r.stakeMon > 0 ? r.selfStakeMon / r.stakeMon : 0;
-      r.validatorShareMon =
-        r.poolEarnedMon * commRate +
-        r.poolEarnedMon * (1 - commRate) * selfFrac;
+      r.validatorShareMon = r.poolEarnedMon * empiricalShare;
       r.validatorShareUsd = r.validatorShareMon * r.fxPriceUsd;
       // Update legacy aliases.
       r.commissionMon = r.validatorShareMon;
@@ -477,10 +496,6 @@ export async function GET(
       summaryCommissionMon += r.validatorShareMon;
       summaryCommissionUsd += r.validatorShareUsd;
     }
-
-    // Sanity: total pool earned for diagnostics.
-    let totalPoolEarnedMon = 0;
-    for (const r of epochsArray) totalPoolEarnedMon += r.poolEarnedMon;
 
     // Window timestamps + days observed (from snapshot epoch span, not claim ts)
     const firstTs = inWindow[0].createdAt;
