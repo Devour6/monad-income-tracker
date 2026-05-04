@@ -424,45 +424,53 @@ export default function ValidatorDashboard() {
           </div>
         ) : data ? (
           <>
-            {/* Headline tiles — stack on mobile, wider hero */}
+            {/* Headline tiles — claimed is the truth (every wei is on-chain) */}
             <section className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <div className="rounded-xl border border-phase-green/30 bg-phase-green/5 p-4 sm:p-5">
-                <div className="text-[10px] font-body uppercase tracking-widest text-phase-green mb-1.5">
-                  Total income
+                <div className="text-[10px] font-body uppercase tracking-widest text-phase-green mb-1.5 inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3 h-3 text-phase-green" />
+                  Lifetime claimed
                 </div>
                 <div className="font-display text-2xl sm:text-3xl text-cream tracking-wide print:text-black">
-                  {fmtMon(data.summary.totalIncomeMon)}
+                  {fmtMon(data.summary.claimedMon)}
                   <span className="text-cream-40 text-base font-body ml-1.5">MON</span>
                 </div>
                 <div className="font-mono text-cream-60 text-sm mt-1">
-                  {fmtUsd(data.summary.totalIncomeUsd)}
+                  {fmtUsd(data.summary.claimedMon * data.summary.livePriceUsd)}
                   {serverCostUsd > 0 && (
                     <span className="text-cream-40 ml-2">
                       · net {fmtUsd(data.summary.netUsd)}
                     </span>
                   )}
                 </div>
+                <div className="font-mono text-cream-40 text-[11px] mt-0.5">
+                  {data.claimEvents.length} on-chain claim
+                  {data.claimEvents.length === 1 ? "" : "s"}
+                </div>
               </div>
               <div className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5">
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5 inline-flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3 h-3 text-phase-green" />
-                  Already claimed
+                  <ExternalLink className="w-3 h-3 text-cream-40" />
+                  Priority fees
                 </div>
                 <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
-                  {fmtMon(data.summary.claimedMon)}
+                  {fmtMon(data.summary.priorityFeesMon)}
                   <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
                 </div>
                 <div className="font-mono text-cream-60 text-sm mt-1">
-                  {fmtUsd(data.summary.claimedMon * data.summary.livePriceUsd)}
+                  {fmtUsd(data.summary.priorityFeesUsd)}
                 </div>
                 <div className="font-mono text-cream-40 text-[11px] mt-0.5">
-                  {data.claimEvents.length} claim event{data.claimEvents.length === 1 ? "" : "s"}
+                  Direct to validator wallet
                 </div>
               </div>
-              <div className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5">
+              <div
+                className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5"
+                title="The whole pool's pending balance (commission + delegator yield combined). Distributed pro-rata to all delegators on next claim. Not counted as validator income because the on-chain decomposition isn't unambiguously specified."
+              >
                 <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5 inline-flex items-center gap-1.5">
                   <Hourglass className="w-3 h-3 text-phase-yellow" />
-                  Unclaimed
+                  Pool pending
                 </div>
                 <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
                   {fmtMon(data.summary.unclaimedMon)}
@@ -472,7 +480,7 @@ export default function ValidatorDashboard() {
                   {fmtUsd(data.summary.unclaimedMon * data.summary.livePriceUsd)}
                 </div>
                 <div className="font-mono text-cream-40 text-[11px] mt-0.5">
-                  Sitting in precompile, claimable
+                  Pool-wide, distributed on next claim
                 </div>
               </div>
             </section>

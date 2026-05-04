@@ -113,8 +113,9 @@ export async function GET(
       totalCommissionMon: realized.totalCommissionMon,
       totalCommissionUsd: realized.totalCommissionMon * latestPrice,
 
-      // Total reward pool that flowed through this validator (commission + delegator).
-      totalPoolMon: realized.totalPoolMon,
+      // Pool's currently unclaimed balance (not validator income — pending
+      // distribution to all delegators on next claim).
+      poolUnclaimedMon: realized.poolUnclaimedMon,
 
       // Currently unclaimed_rewards on-chain. NOTE: this represents the
       // full pool's pending distribution, not commission alone.

@@ -1,69 +1,65 @@
 import { db } from "@/lib/db";
 import { claimEvents } from "@/lib/db/claim-events-schema";
 import { epochSnapshots, validators } from "@/lib/db/schema";
-import { sql, eq, inArray, asc, desc, and, gte, lte } from "drizzle-orm";
+import { sql, eq, asc, desc, and, gte, lte } from "drizzle-orm";
 
 /**
- * Realized income — REAL on-chain income tracking, no modeling.
+ * Realized income — REAL on-chain income tracking. No modeling. No projections.
  *
- * Key insight (verified empirically):
- *   `unclaimedRewards` on getValidator() is the WHOLE pool's pending balance,
- *   not just the validator's commission. Backpack runs 0% commission yet has
- *   6+M MON in unclaimedRewards — that's delegator share, not commission.
+ * The headline number is the literal sum of every `ClaimRewards` event
+ * emitted by the staking precompile where `delegator == validator.auth_address`.
+ * Each row in `claim_events` is a real transaction the validator's auth
+ * address signed. Auditable on-chain.
  *
- *   So "lifetime income to the validator" cannot be `claimed + unclaimed`
- *   wholesale. The validator only owns:
- *     - everything they've already CLAIMED (sum of ClaimRewards events
- *       where delegator = auth_address) — fully on-chain, exact
- *     - their PRO-RATA share of what's still pending in the pool, which
- *       equals `unclaimed × (auth_self_stake / total_stake)`. The rest of
- *       the pool belongs to other delegators.
+ * What about pending rewards?
+ * ---------------------------
+ * The staking precompile's `unclaimedRewards` slot is the WHOLE pool's pending
+ * balance — proven empirically: Backpack runs 0% commission and still has
+ * 6M+ MON in unclaimedRewards (that's all delegator yield, not commission).
  *
- * If a validator has commission > 0% there's an additional commission slice
- * baked into pool growth that the auth address picks up when claiming.
- * That's already inside the claimed amount — claims include both
- * self-stake yield AND commission. We don't need to decompose them; the
- * sum is what hit the validator's wallet.
+ * We CANNOT decompose `unclaimedRewards` into "validator's share" without
+ * knowing the precompile's exact distribution formula, which Monad docs
+ * don't fully specify. Rather than fabricate a number, we report:
  *
- * Public API
- * ----------
- * - getRealizedIncome(validatorId)  — single validator
- * - getRealizedIncomeBatch(ids)     — batched for leaderboard/compare
- * - getClaimEvents(validatorId)     — per-claim history for the dashboard
+ *   - `totalClaimedMon`   = exactly what the validator has withdrawn
+ *                           (sum of auth-address ClaimRewards events)
+ *   - `poolUnclaimedMon`  = the entire pool's pending balance
+ *                           (informational — your share TBD on claim)
+ *
+ * The dashboard uses `totalClaimedMon` as the headline lifetime income.
+ * Pool unclaimed is shown separately and labeled as "pool pending —
+ * distributed to delegators on next claim."
  */
 
 const WEI = BigInt(10) ** BigInt(18);
 
 export interface RealizedIncome {
   validatorId: number;
-  /** Earliest claim block (null if no claims yet). */
+  /** Earliest auth-address claim block (null if no claims yet). */
   firstClaimBlock: bigint | null;
-  /** Latest claim block. */
+  /** Latest auth-address claim block. */
   lastClaimBlock: bigint | null;
   /** Number of ClaimRewards events the auth address has issued. */
   claimCount: number;
-  /** Sum of all auth-address claim amounts ever paid out, in MON. */
+  /**
+   * Sum of all auth-address claim amounts ever paid out, in MON.
+   * THE HEADLINE NUMBER. Every wei is on-chain and traceable.
+   */
   totalClaimedMon: number;
   /**
-   * Validator's pro-rata share of currently pending pool rewards
-   * (unclaimed × auth_self_stake / total_stake). This is approximately
-   * what the validator would receive if they called claimRewards now.
+   * Whole pool's currently unclaimed balance from getValidator() slot 5.
+   * Informational only — represents pending rewards across all delegators
+   * (including the validator's auth-address share). Not counted as
+   * validator income because we cannot decompose it.
    */
-  pendingShareMon: number;
-  /** Total unclaimed pool — informational, NOT counted as validator income. */
   poolUnclaimedMon: number;
-  /**
-   * Lifetime commission = totalClaimed + pendingShare.
-   * What the validator has actually earned, minus pure delegator-pool MON
-   * that doesn't belong to them.
-   */
+  /** Backward-compat alias for `totalClaimedMon`. */
   totalCommissionMon: number;
-  /** Backward-compat aliases (do not use for new code). */
-  currentUnclaimedMon: number; // = pendingShareMon
+  /** Backward-compat alias — DEPRECATED, equals poolUnclaimedMon. */
+  currentUnclaimedMon: number;
   firstEpoch: number | null;
   lastEpoch: number | null;
   snapshotCount: number;
-  totalPoolMon: number;
 }
 
 function weiToMon(wei: bigint): number {
@@ -72,20 +68,12 @@ function weiToMon(wei: bigint): number {
 
 interface SnapMeta {
   unclaimedWei: bigint;
-  stakeWei: bigint;
-  selfStakeWei: bigint;
   firstEpoch: number | null;
   lastEpoch: number | null;
   snapshotCount: number;
 }
 
-/**
- * Latest snapshot + epoch bounds for one validator. We need stake +
- * self_stake to compute the pro-rata share of the pending pool.
- */
-async function getValidatorSnapshotMeta(
-  validatorId: number
-): Promise<SnapMeta> {
+async function getSnapMeta(validatorId: number): Promise<SnapMeta> {
   const aggRows = (await db
     .select({
       cnt: sql<number>`COUNT(*)::int`,
@@ -102,47 +90,26 @@ async function getValidatorSnapshotMeta(
   if (!agg || !agg.cnt) {
     return {
       unclaimedWei: BigInt(0),
-      stakeWei: BigInt(0),
-      selfStakeWei: BigInt(0),
       firstEpoch: null,
       lastEpoch: null,
       snapshotCount: 0,
     };
   }
   const latest = await db
-    .select({
-      unclaimed: epochSnapshots.unclaimedRewards,
-      stake: epochSnapshots.stakeWei,
-      self: epochSnapshots.selfStakeWei,
-    })
+    .select({ unclaimed: epochSnapshots.unclaimedRewards })
     .from(epochSnapshots)
     .where(eq(epochSnapshots.validatorId, validatorId))
     .orderBy(desc(epochSnapshots.epoch))
     .limit(1);
-  const row = latest[0];
   return {
-    unclaimedWei: row ? BigInt(row.unclaimed) : BigInt(0),
-    stakeWei: row ? BigInt(row.stake) : BigInt(0),
-    selfStakeWei: row?.self ? BigInt(row.self) : BigInt(0),
+    unclaimedWei: latest.length > 0 ? BigInt(latest[0].unclaimed) : BigInt(0),
     firstEpoch: agg.minE,
     lastEpoch: agg.maxE,
     snapshotCount: Number(agg.cnt),
   };
 }
 
-/**
- * Compute the validator's pro-rata share of the pending pool. If self-stake
- * data is missing we fall back to 0 (better to under-report than to
- * overstate income).
- */
-function computePendingShareMon(meta: SnapMeta): number {
-  if (meta.stakeWei === BigInt(0) || meta.selfStakeWei === BigInt(0)) return 0;
-  // share_wei = unclaimed_wei * self / stake
-  const shareWei = (meta.unclaimedWei * meta.selfStakeWei) / meta.stakeWei;
-  return weiToMon(shareWei);
-}
-
-/** Realized commission income for a single validator. */
+/** Realized income for a single validator. */
 export async function getRealizedIncome(
   validatorId: number
 ): Promise<RealizedIncome> {
@@ -159,14 +126,12 @@ export async function getRealizedIncome(
       lastClaimBlock: null,
       claimCount: 0,
       totalClaimedMon: 0,
-      pendingShareMon: 0,
       poolUnclaimedMon: 0,
       totalCommissionMon: 0,
       currentUnclaimedMon: 0,
       firstEpoch: null,
       lastEpoch: null,
       snapshotCount: 0,
-      totalPoolMon: 0,
     };
   }
 
@@ -197,12 +162,10 @@ export async function getRealizedIncome(
   const firstBlk = BigInt(agg?.firstBlk || "0");
   const lastBlk = BigInt(agg?.lastBlk || "0");
 
-  const snapMeta = await getValidatorSnapshotMeta(validatorId);
+  const snapMeta = await getSnapMeta(validatorId);
 
   const totalClaimedMon = weiToMon(totalClaimedWei);
-  const pendingShareMon = computePendingShareMon(snapMeta);
   const poolUnclaimedMon = weiToMon(snapMeta.unclaimedWei);
-  const totalCommissionMon = totalClaimedMon + pendingShareMon;
 
   return {
     validatorId,
@@ -210,14 +173,12 @@ export async function getRealizedIncome(
     lastClaimBlock: lastBlk > BigInt(0) ? lastBlk : null,
     claimCount,
     totalClaimedMon,
-    pendingShareMon,
     poolUnclaimedMon,
-    totalCommissionMon,
-    currentUnclaimedMon: pendingShareMon,
+    totalCommissionMon: totalClaimedMon, // alias — claimed only
+    currentUnclaimedMon: poolUnclaimedMon, // alias — pool only
     firstEpoch: snapMeta.firstEpoch,
     lastEpoch: snapMeta.lastEpoch,
     snapshotCount: snapMeta.snapshotCount,
-    totalPoolMon: 0,
   };
 }
 
@@ -228,56 +189,72 @@ export async function getRealizedIncomeBatch(
   const out = new Map<number, RealizedIncome>();
   if (validatorIds.length === 0) return out;
 
-  // Build a safely parameterized IN list. Drizzle's `sql.join` interpolates
-  // each value as a parameter — works portably without ANY/ALL casts.
-  const idList = sql.join(
-    validatorIds.map((id) => sql`${id}`),
-    sql`, `
+  // Validate IDs are positive integers (defense against injection via raw IN).
+  const safeIds = validatorIds.filter(
+    (n) => Number.isInteger(n) && n > 0
   );
+  if (safeIds.length === 0) return out;
 
-  // 1. Auth addresses (lowercased for join match).
+  // 1. auth addresses
   const valRows = await db
     .select({
       validatorId: validators.validatorId,
       authAddress: validators.authAddress,
     })
     .from(validators)
-    .where(inArray(validators.validatorId, validatorIds));
-  const authByVid = new Map<number, string>();
+    .where(
+      sql.raw(
+        `validator_id IN (${safeIds.map((n) => String(n)).join(",")})`
+      )
+    );
+  const authMap = new Map<number, string>();
   for (const v of valRows) {
-    authByVid.set(v.validatorId, v.authAddress.toLowerCase());
+    authMap.set(v.validatorId, v.authAddress.toLowerCase());
   }
 
-  // 2. Claim aggregates per validator (auth-address claims only).
-  type ClaimRow = {
-    validator_id: number;
-    total_wei: string;
-    cnt: number;
-    first_blk: string;
-    last_blk: string;
-  };
-  const claimResult = await db.execute(sql`
+  // 2. Aggregate auth-address claims per validator.
+  const claimRowsRaw = (await db.execute(sql`
     SELECT ce.validator_id,
       COALESCE(SUM(ce.amount_wei), 0)::text AS total_wei,
       COUNT(*)::int AS cnt,
       COALESCE(MIN(ce.block_number), 0)::text AS first_blk,
       COALESCE(MAX(ce.block_number), 0)::text AS last_blk
     FROM claim_events ce
-    INNER JOIN validators v ON v.validator_id = ce.validator_id
+    INNER JOIN validators v
+      ON v.validator_id = ce.validator_id
       AND LOWER(v.auth_address) = ce.delegator
-    WHERE ce.validator_id IN (${idList})
+    WHERE ce.validator_id IN (${sql.raw(
+      safeIds.map((n) => String(n)).join(",")
+    )})
     GROUP BY ce.validator_id
-  `);
-  const claimRows = (
-    Array.isArray(claimResult)
-      ? claimResult
-      : ((claimResult as { rows: unknown[] }).rows ?? [])
-  ) as ClaimRow[];
+  `)) as unknown as { rows?: unknown[] };
+  const claimRowsList: Array<{
+    validator_id: number;
+    total_wei: string;
+    cnt: number;
+    first_blk: string;
+    last_blk: string;
+  }> = Array.isArray((claimRowsRaw as { rows?: unknown[] }).rows)
+    ? ((claimRowsRaw as { rows: unknown[] }).rows as Array<{
+        validator_id: number;
+        total_wei: string;
+        cnt: number;
+        first_blk: string;
+        last_blk: string;
+      }>)
+    : (claimRowsRaw as unknown as Array<{
+        validator_id: number;
+        total_wei: string;
+        cnt: number;
+        first_blk: string;
+        last_blk: string;
+      }>);
+
   const claimAgg = new Map<
     number,
     { totalWei: bigint; cnt: number; first: bigint; last: bigint }
   >();
-  for (const r of claimRows) {
+  for (const r of claimRowsList) {
     claimAgg.set(Number(r.validator_id), {
       totalWei: BigInt(r.total_wei),
       cnt: Number(r.cnt),
@@ -286,67 +263,70 @@ export async function getRealizedIncomeBatch(
     });
   }
 
-  // 3. Latest snapshot per validator (unclaimed + stake + self-stake) +
-  //    epoch bounds.
-  type LatestRow = {
-    validator_id: number;
-    unclaimed_rewards: string;
-    stake_wei: string;
-    self_stake_wei: string | null;
-    epoch: number;
-  };
-  const latestResult = await db.execute(sql`
-    SELECT validator_id, unclaimed_rewards, stake_wei, self_stake_wei, epoch
+  // 3. Latest unclaimed per validator + snapshot meta.
+  const unclaimedRowsRaw = (await db.execute(sql`
+    SELECT validator_id, unclaimed_rewards
     FROM (
-      SELECT validator_id, unclaimed_rewards, stake_wei, self_stake_wei, epoch,
+      SELECT validator_id, unclaimed_rewards,
         ROW_NUMBER() OVER (PARTITION BY validator_id ORDER BY epoch DESC) AS rn
       FROM epoch_snapshots
-      WHERE validator_id IN (${idList})
+      WHERE validator_id IN (${sql.raw(
+        safeIds.map((n) => String(n)).join(",")
+      )})
     ) t
     WHERE rn = 1
-  `);
-  const latestRows = (
-    Array.isArray(latestResult)
-      ? latestResult
-      : ((latestResult as { rows: unknown[] }).rows ?? [])
-  ) as LatestRow[];
-  const latestMap = new Map<
-    number,
-    { unclaimedWei: bigint; stakeWei: bigint; selfStakeWei: bigint }
-  >();
-  for (const r of latestRows) {
-    latestMap.set(Number(r.validator_id), {
-      unclaimedWei: BigInt(r.unclaimed_rewards),
-      stakeWei: BigInt(r.stake_wei),
-      selfStakeWei: r.self_stake_wei ? BigInt(r.self_stake_wei) : BigInt(0),
-    });
+  `)) as unknown as { rows?: unknown[] };
+  const unclaimedRowsList: Array<{
+    validator_id: number;
+    unclaimed_rewards: string;
+  }> = Array.isArray((unclaimedRowsRaw as { rows?: unknown[] }).rows)
+    ? ((unclaimedRowsRaw as { rows: unknown[] }).rows as Array<{
+        validator_id: number;
+        unclaimed_rewards: string;
+      }>)
+    : (unclaimedRowsRaw as unknown as Array<{
+        validator_id: number;
+        unclaimed_rewards: string;
+      }>);
+  const unclaimedMap = new Map<number, bigint>();
+  for (const r of unclaimedRowsList) {
+    unclaimedMap.set(Number(r.validator_id), BigInt(r.unclaimed_rewards));
   }
 
-  type SnapAggRow = {
-    validator_id: number;
-    cnt: number;
-    min_e: number;
-    max_e: number;
-  };
-  const snapAggResult = await db.execute(sql`
+  const snapAggRaw = (await db.execute(sql`
     SELECT validator_id,
       COUNT(*)::int AS cnt,
       MIN(epoch)::int AS min_e,
       MAX(epoch)::int AS max_e
     FROM epoch_snapshots
-    WHERE validator_id IN (${idList})
+    WHERE validator_id IN (${sql.raw(
+      safeIds.map((n) => String(n)).join(",")
+    )})
     GROUP BY validator_id
-  `);
-  const snapAggRows = (
-    Array.isArray(snapAggResult)
-      ? snapAggResult
-      : ((snapAggResult as { rows: unknown[] }).rows ?? [])
-  ) as SnapAggRow[];
+  `)) as unknown as { rows?: unknown[] };
+  const snapAggList: Array<{
+    validator_id: number;
+    cnt: number;
+    min_e: number;
+    max_e: number;
+  }> = Array.isArray((snapAggRaw as { rows?: unknown[] }).rows)
+    ? ((snapAggRaw as { rows: unknown[] }).rows as Array<{
+        validator_id: number;
+        cnt: number;
+        min_e: number;
+        max_e: number;
+      }>)
+    : (snapAggRaw as unknown as Array<{
+        validator_id: number;
+        cnt: number;
+        min_e: number;
+        max_e: number;
+      }>);
   const snapMetaMap = new Map<
     number,
     { cnt: number; minE: number; maxE: number }
   >();
-  for (const r of snapAggRows) {
+  for (const r of snapAggList) {
     snapMetaMap.set(Number(r.validator_id), {
       cnt: Number(r.cnt),
       minE: Number(r.min_e),
@@ -355,48 +335,32 @@ export async function getRealizedIncomeBatch(
   }
 
   // 4. Assemble.
-  for (const id of validatorIds) {
-    const cAgg = claimAgg.get(id);
-    const latest = latestMap.get(id);
-    const sm = snapMetaMap.get(id);
-    const totalClaimedWei = cAgg?.totalWei ?? BigInt(0);
+  for (const id of safeIds) {
+    const agg = claimAgg.get(id);
+    const unclaimedWei = unclaimedMap.get(id) ?? BigInt(0);
+    const totalClaimedWei = agg?.totalWei ?? BigInt(0);
     const totalClaimedMon = weiToMon(totalClaimedWei);
-
-    let pendingShareMon = 0;
-    let poolUnclaimedMon = 0;
-    if (latest) {
-      poolUnclaimedMon = weiToMon(latest.unclaimedWei);
-      if (latest.stakeWei > BigInt(0) && latest.selfStakeWei > BigInt(0)) {
-        const shareWei =
-          (latest.unclaimedWei * latest.selfStakeWei) / latest.stakeWei;
-        pendingShareMon = weiToMon(shareWei);
-      }
-    }
-
+    const poolUnclaimedMon = weiToMon(unclaimedWei);
+    const sm = snapMetaMap.get(id);
     out.set(id, {
       validatorId: id,
-      firstClaimBlock: cAgg && cAgg.first > BigInt(0) ? cAgg.first : null,
-      lastClaimBlock: cAgg && cAgg.last > BigInt(0) ? cAgg.last : null,
-      claimCount: cAgg?.cnt ?? 0,
+      firstClaimBlock: agg && agg.first > BigInt(0) ? agg.first : null,
+      lastClaimBlock: agg && agg.last > BigInt(0) ? agg.last : null,
+      claimCount: agg?.cnt ?? 0,
       totalClaimedMon,
-      pendingShareMon,
       poolUnclaimedMon,
-      totalCommissionMon: totalClaimedMon + pendingShareMon,
-      currentUnclaimedMon: pendingShareMon,
+      totalCommissionMon: totalClaimedMon,
+      currentUnclaimedMon: poolUnclaimedMon,
       firstEpoch: sm?.minE ?? null,
       lastEpoch: sm?.maxE ?? null,
       snapshotCount: sm?.cnt ?? 0,
-      totalPoolMon: 0,
     });
   }
 
   return out;
 }
 
-/**
- * Per-claim-event detail for a validator — used by the dashboard to render
- * the claim history table. Returns most recent first.
- */
+/** Per-claim-event detail for a validator. Returns most recent first. */
 export interface ClaimEventDetail {
   blockNumber: bigint;
   timestamp: Date;

@@ -359,50 +359,44 @@ export async function GET(
       };
     });
 
-    // Current pool unclaimed = total pending rewards (validator's commission
-    // + delegators' shares). The validator only owns their pro-rata slice.
+    // Pool unclaimed = total pending rewards across ALL delegators on this
+    // validator. We do NOT count this as the validator's income — the pool
+    // distribution formula isn't fully specified by Monad docs and we
+    // verified empirically (Backpack at 0% commission has 6M+ MON in pool)
+    // that this slot represents the whole pool, not just commission.
+    // Surfaced informationally so testers/operators can see what's pending.
     const lastSnap = inWindow[inWindow.length - 1];
     const poolUnclaimedWei = BigInt(lastSnap.unclaimedRewards);
     const poolUnclaimedMon = toMon(poolUnclaimedWei);
-    const lastStakeWei = BigInt(lastSnap.stakeWei);
-    const lastSelfWei = lastSnap.selfStakeWei
-      ? BigInt(lastSnap.selfStakeWei)
-      : BigInt(0);
-    const pendingShareMon =
-      lastStakeWei > BigInt(0) && lastSelfWei > BigInt(0)
-        ? toMon((poolUnclaimedWei * lastSelfWei) / lastStakeWei)
-        : 0;
-    const pendingShareUsd = pendingShareMon * livePrice;
+    const poolUnclaimedUsd = poolUnclaimedMon * livePrice;
 
-    // Lifetime view: total = claimed (auth-address ClaimRewards events) +
-    // pending share (validator's pro-rata slice of pool, NOT the whole pool).
-    // Sliced window: total = per-epoch claims + priority fees in that window.
-    const totalIncomeMon = isFullWindow
-      ? summaryClaimedMon + pendingShareMon + summaryPriorityFeesMon
-      : summaryClaimedMon + summaryPriorityFeesMon;
-    const totalIncomeUsd = isFullWindow
-      ? summaryClaimedMon * livePrice + pendingShareUsd + summaryPriorityFeesUsd
-      : summaryCommissionUsd + summaryPriorityFeesUsd;
+    // Lifetime income = literal sum of on-chain ClaimRewards events the
+    // auth address has signed. Plus priority fees for the window.
+    // No pool decomposition. No projection. Auditable.
+    const totalIncomeMon = summaryClaimedMon + summaryPriorityFeesMon;
+    const totalIncomeUsd =
+      summaryClaimedMon * livePrice + summaryPriorityFeesUsd;
     const netUsd = totalIncomeUsd - serverCostProRatedUsd;
 
     const summary = {
       claimCount: claimRows.length,
-      commissionMon: isFullWindow
-        ? summaryClaimedMon + pendingShareMon
-        : summaryClaimedMon,
-      commissionUsd: isFullWindow
-        ? summaryClaimedMon * livePrice + pendingShareUsd
-        : summaryClaimedMon * livePrice,
+      // Headline commission = total claimed (every wei is on-chain).
+      commissionMon: summaryClaimedMon,
+      commissionUsd: summaryClaimedMon * livePrice,
       priorityFeesMon: summaryPriorityFeesMon,
       priorityFeesUsd: summaryPriorityFeesUsd,
       claimedMon: summaryClaimedMon,
-      // unclaimedMon now reports the validator's PRO-RATA share, not the
-      // full pool. The full pool is exposed separately as poolUnclaimedMon.
-      unclaimedMon: pendingShareMon,
-      currentUnclaimedMon: pendingShareMon,
-      currentUnclaimedUsd: pendingShareUsd,
+      claimedUsd: summaryClaimedMon * livePrice,
+      // Pool pending — informational, NOT counted as validator income.
+      // Distributed to delegators (incl. validator) on next claim() call.
       poolUnclaimedMon,
-      poolUnclaimedUsd: poolUnclaimedMon * livePrice,
+      poolUnclaimedUsd,
+      // Backward-compat aliases (DEPRECATED — equal poolUnclaimed).
+      // Old dashboard versions read these and labeled them as the
+      // validator's unclaimed; new dashboard uses poolUnclaimedMon.
+      unclaimedMon: poolUnclaimedMon,
+      currentUnclaimedMon: poolUnclaimedMon,
+      currentUnclaimedUsd: poolUnclaimedUsd,
       totalIncomeMon,
       totalIncomeUsd,
       serverCostMonthlyUsd,
