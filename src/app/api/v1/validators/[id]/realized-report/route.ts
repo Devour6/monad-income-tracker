@@ -444,47 +444,95 @@ export async function GET(
     // For Phase: total auth claimed = 76,414. Total pool earned = ~370K.
     // Empirical share = 20.6% — matches their observed commission rate.
     // Lifetime earned = 76,414 + (9,250 × 0.206) ≈ 78,320 MON.
-    // ── Lifetime earned (anchored to on-chain truth) ────────────────
+    // ── Empirical share derivation ──────────────────────────────────
     //
-    // Two anchors:
-    //   (a) sum of auth-address ClaimRewards events — literal on-chain
-    //       MON paid to the validator's wallet. Exact, no math.
-    //   (b) auth address's share of currently pending pool. Per the
-    //       Monad reward formula:
-    //         pendingShare = poolUnclaimed × commissionRate
-    //                      + poolUnclaimed × (1 − commissionRate)
-    //                                       × (selfStake / totalStake)
+    // The validator's share of every epoch's pool growth is a property of
+    // their commission rate + self-stake position — NOT of the window
+    // the user picked. So derive the empirical share from LIFETIME data
+    // (all claims + lifetime pool growth), then apply that scalar to the
+    // current windowed per-epoch pool earnings.
     //
-    // Lifetime earned = (a) + (b). Per-epoch validator share is then
-    // distributed proportionally to that epoch's pool growth, so the
-    // sum across all epochs equals lifetime earned (matches on-chain
-    // claims + pending share exactly).
+    // Without this, picking a 3-day window with no claims in it gives
+    // share = pendingShare/windowPool ≈ 4%, dramatically undercounting
+    // the validator's actual income for that window.
+
+    // Sum lifetime auth-address claims (NOT windowed).
+    const lifetimeClaimsAggRaw = await db
+      .select({
+        totalWei: sql<string>`COALESCE(SUM(${claimEvents.amountWei}), 0)::text`,
+      })
+      .from(claimEvents)
+      .where(
+        and(
+          eq(claimEvents.validatorId, validatorId),
+          eq(claimEvents.delegator, auth)
+        )
+      );
+    const lifetimeClaimedMon = toMon(
+      BigInt(lifetimeClaimsAggRaw[0]?.totalWei || "0")
+    );
+
+    // Reconstruct lifetime pool earned across ALL snapshots, not just
+    // windowed ones. Same formula: Δ(unclaimed) + claims-in-that-epoch.
+    const allClaimsLifetimeRaw = await db
+      .select({
+        epoch: claimEvents.epoch,
+        amountWei: claimEvents.amountWei,
+      })
+      .from(claimEvents)
+      .where(eq(claimEvents.validatorId, validatorId));
+    const allClaimsByEpochLifetime = new Map<number, bigint>();
+    for (const c of allClaimsLifetimeRaw) {
+      const wei = BigInt(c.amountWei);
+      allClaimsByEpochLifetime.set(
+        c.epoch,
+        (allClaimsByEpochLifetime.get(c.epoch) ?? BigInt(0)) + wei
+      );
+    }
+    let lifetimePoolEarnedMon = 0;
+    let prevLifetimeUnclaimed = toMon(BigInt(allSnaps[0].unclaimedRewards));
+    for (let i = 1; i < allSnaps.length; i++) {
+      const s = allSnaps[i];
+      const curr = toMon(BigInt(s.unclaimedRewards));
+      const claims = allClaimsByEpochLifetime.get(s.epoch);
+      const claimedMon = claims ? toMon(claims) : 0;
+      const raw = curr - prevLifetimeUnclaimed + claimedMon;
+      if (raw > 0) lifetimePoolEarnedMon += raw;
+      prevLifetimeUnclaimed = curr;
+    }
+
+    // Pro-rata pending share at lifetime view (uses last snapshot ever).
+    const lastEverSnap = allSnaps[allSnaps.length - 1];
+    const lastEverStakeWei = BigInt(lastEverSnap.stakeWei);
+    const lastEverSelfWei = lastEverSnap.selfStakeWei
+      ? BigInt(lastEverSnap.selfStakeWei)
+      : BigInt(0);
+    const lastEverUnclaimed = toMon(BigInt(lastEverSnap.unclaimedRewards));
+    const lastEverCommissionRate =
+      Number(BigInt(lastEverSnap.commission)) / 1e18;
+    const lastEverSelfFraction =
+      lastEverStakeWei > BigInt(0) && lastEverSelfWei > BigInt(0)
+        ? Number(lastEverSelfWei) / Number(lastEverStakeWei)
+        : 0;
+    const lifetimePendingShareMon =
+      lastEverUnclaimed * lastEverCommissionRate +
+      lastEverUnclaimed * (1 - lastEverCommissionRate) * lastEverSelfFraction;
+
+    const lifetimeAuthEarnedMon =
+      lifetimeClaimedMon + lifetimePendingShareMon;
+
+    // Empirical share = (lifetime claims + lifetime pendingShare) /
+    // lifetime pool earned. This scalar is stable across windows.
+    const empiricalShare =
+      lifetimePoolEarnedMon > 0
+        ? lifetimeAuthEarnedMon / lifetimePoolEarnedMon
+        : 0;
+
+    // Window-scoped totals for the summary card (windowed pool × scalar).
     let totalPoolEarnedMon = 0;
     for (const r of epochsArray) totalPoolEarnedMon += r.poolEarnedMon;
-
-    const lastSnapForShare = inWindow[inWindow.length - 1];
-    const lastStakeWei = BigInt(lastSnapForShare.stakeWei);
-    const lastSelfWei = lastSnapForShare.selfStakeWei
-      ? BigInt(lastSnapForShare.selfStakeWei)
-      : BigInt(0);
-    const lastUnclaimed = toMon(BigInt(lastSnapForShare.unclaimedRewards));
-    const lastCommissionRate =
-      Number(BigInt(lastSnapForShare.commission)) / 1e18;
-    const selfStakeFraction =
-      lastStakeWei > BigInt(0) && lastSelfWei > BigInt(0)
-        ? Number(lastSelfWei) / Number(lastStakeWei)
-        : 0;
-    const proRataPendingShare =
-      lastUnclaimed * lastCommissionRate +
-      lastUnclaimed * (1 - lastCommissionRate) * selfStakeFraction;
-
+    const proRataPendingShare = lifetimePendingShareMon; // for compat below
     const totalAuthEarnedMon = summaryClaimedMon + proRataPendingShare;
-
-    // Empirical scalar to back-fill per-epoch validator share.
-    // For multi-claim validators: dominated by actual claims, ~3% accurate.
-    // For zero-claim validators: dominated by pendingShare estimate.
-    const empiricalShare =
-      totalPoolEarnedMon > 0 ? totalAuthEarnedMon / totalPoolEarnedMon : 0;
     let summaryCommissionMon = 0;
     let summaryCommissionUsd = 0;
     for (const r of epochsArray) {

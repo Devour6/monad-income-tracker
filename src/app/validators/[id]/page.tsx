@@ -65,6 +65,7 @@ interface Report {
     fxMethodology: "per-epoch" | "end-of-period";
     endOfPeriodPriceUsd: number;
     livePriceUsd: number;
+    isFullWindow: boolean;
   };
   epochs: Array<{
     epoch: number;
@@ -504,7 +505,13 @@ export default function ValidatorDashboard() {
               >
                 <div className="text-[10px] font-body uppercase tracking-widest text-phase-green mb-1.5 inline-flex items-center gap-1.5">
                   <CheckCircle2 className="w-3 h-3 text-phase-green" />
-                  Lifetime earned
+                  {data.summary.isFullWindow
+                    ? "Lifetime earned"
+                    : `Earned in window${
+                        data.window?.daysObserved
+                          ? ` (${data.window.daysObserved.toFixed(1)}d)`
+                          : ""
+                      }`}
                 </div>
                 <div className="font-display text-2xl sm:text-3xl text-cream tracking-wide print:text-black">
                   {fmtMon(data.summary.totalIncomeMon)}
@@ -519,9 +526,21 @@ export default function ValidatorDashboard() {
                   )}
                 </div>
                 <div className="font-mono text-cream-40 text-[11px] mt-0.5">
-                  {fmtMon(data.summary.claimedMon)} MON withdrawn ·{" "}
-                  {data.claimEvents.length} claim
-                  {data.claimEvents.length === 1 ? "" : "s"}
+                  {data.summary.isFullWindow ? (
+                    <>
+                      {fmtMon(data.summary.claimedMon)} MON withdrawn ·{" "}
+                      {data.claimEvents.length} claim
+                      {data.claimEvents.length === 1 ? "" : "s"}
+                    </>
+                  ) : (
+                    <>
+                      Pool earned in window:{" "}
+                      {fmtMon(
+                        data.epochs.reduce((s, e) => s + e.poolEarnedMon, 0)
+                      )}{" "}
+                      MON
+                    </>
+                  )}
                 </div>
               </div>
               <div className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5">
