@@ -150,25 +150,63 @@ export default function ValidatorDashboard() {
   const [fx, setFx] = useState<"per-epoch" | "end-of-period">("per-epoch");
   const [serverCostUsd, setServerCostUsd] = useState<number>(0);
 
+  // Validate a YYYY-MM-DD string. Native <input type="date"> can hand us
+  // partial / impossible values (e.g. "0202-05-28" mid-typing, or "2026-02-31")
+  // — gate fetches and URL building on a real Date.
+  function parseValidDate(s: string): Date | null {
+    if (!s) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (y < 2024 || y > 2100) return null;
+    if (mo < 1 || mo > 12) return null;
+    if (d < 1 || d > 31) return null;
+    const dt = new Date(`${s}T00:00:00.000Z`);
+    if (isNaN(dt.getTime())) return null;
+    // Round-trip check catches things like Feb 31 → Mar 3.
+    if (dt.toISOString().slice(0, 10) !== s) return null;
+    return dt;
+  }
+
+  const fromDateValid = parseValidDate(fromDate);
+  const toDateValid = parseValidDate(toDate);
+  // Both blank = "All time". Either set without the other = also acceptable
+  // (the API treats the missing side as snapshot bound). Both set with
+  // from > to is invalid.
+  const dateRangeValid =
+    !(fromDate && !fromDateValid) &&
+    !(toDate && !toDateValid) &&
+    !(fromDateValid && toDateValid && fromDateValid > toDateValid);
+
   const buildUrl = useCallback(
     (format: "json" | "csv") => {
       const p = new URLSearchParams();
       p.set("format", format);
       p.set("fx", fx);
       p.set("serverCostUsd", String(serverCostUsd || 0));
-      if (fromDate) p.set("fromDate", new Date(fromDate).toISOString());
-      if (toDate) {
-        const end = new Date(toDate);
-        end.setHours(23, 59, 59, 999);
+      if (fromDateValid) p.set("fromDate", fromDateValid.toISOString());
+      if (toDateValid) {
+        const end = new Date(toDateValid);
+        end.setUTCHours(23, 59, 59, 999);
         p.set("toDate", end.toISOString());
       }
       return `/api/v1/validators/${validatorId}/realized-report?${p.toString()}`;
     },
-    [validatorId, fx, serverCostUsd, fromDate, toDate]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      validatorId,
+      fx,
+      serverCostUsd,
+      fromDateValid?.getTime(),
+      toDateValid?.getTime(),
+    ]
   );
 
   const load = useCallback(async () => {
     if (!validatorId) return;
+    if (!dateRangeValid) return; // wait for the user to finish typing
     setLoading(true);
     setErr(null);
     try {
@@ -185,10 +223,15 @@ export default function ValidatorDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [validatorId, buildUrl]);
+  }, [validatorId, buildUrl, dateRangeValid]);
 
+  // Debounce — wait 350ms of stillness before refetching. Prevents firing
+  // on every keystroke while the user is editing the date inputs.
   useEffect(() => {
-    load();
+    const t = setTimeout(() => {
+      load();
+    }, 350);
+    return () => clearTimeout(t);
   }, [load]);
 
   function applyPreset(days: number | "all") {
@@ -224,16 +267,17 @@ export default function ValidatorDashboard() {
 
   const presetLabel = useMemo(() => {
     if (!fromDate && !toDate) return "All time";
-    if (fromDate && toDate) {
+    if (fromDateValid && toDateValid) {
       const days = Math.round(
-        (new Date(toDate).getTime() - new Date(fromDate).getTime()) /
+        (toDateValid.getTime() - fromDateValid.getTime()) /
           (1000 * 60 * 60 * 24)
       );
       const match = PRESETS.find((p) => p.days === days);
       return match?.label ?? `Custom (${days}d)`;
     }
     return "Custom";
-  }, [fromDate, toDate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, fromDateValid?.getTime(), toDateValid?.getTime()]);
 
   return (
     <div className="relative z-[1] min-h-screen px-4 sm:px-6 pt-8 sm:pt-10 pb-6 print:bg-white print:text-black print:p-8">
@@ -321,16 +365,33 @@ export default function ValidatorDashboard() {
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  className="flex-1 min-w-0 rounded-md border border-cream-12 bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:border-phase-green/40 focus:outline-none [color-scheme:dark]"
+                  className={`flex-1 min-w-0 rounded-md border bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:outline-none [color-scheme:dark] ${
+                    fromDate && !fromDateValid
+                      ? "border-phase-yellow/50"
+                      : "border-cream-12 focus:border-phase-green/40"
+                  }`}
                 />
                 <span className="text-cream-40 text-xs font-body">→</span>
                 <input
                   type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  className="flex-1 min-w-0 rounded-md border border-cream-12 bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:border-phase-green/40 focus:outline-none [color-scheme:dark]"
+                  className={`flex-1 min-w-0 rounded-md border bg-dark px-2.5 py-1.5 text-xs font-body text-cream focus:outline-none [color-scheme:dark] ${
+                    toDate && !toDateValid
+                      ? "border-phase-yellow/50"
+                      : "border-cream-12 focus:border-phase-green/40"
+                  }`}
                 />
               </div>
+              {!dateRangeValid && (fromDate || toDate) ? (
+                <div className="mt-1.5 text-[10px] font-body text-phase-yellow">
+                  {fromDate && !fromDateValid
+                    ? "From date isn't valid yet — keep typing."
+                    : toDate && !toDateValid
+                      ? "To date isn't valid yet — keep typing."
+                      : "From date is after to date."}
+                </div>
+              ) : null}
             </div>
 
             {/* FX toggle */}
