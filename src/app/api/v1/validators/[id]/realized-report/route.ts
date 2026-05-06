@@ -244,7 +244,12 @@ export async function GET(
       .where(
         and(
           eq(minerAliases.validatorId, validatorId),
-          inArray(epochPriorityFees.epoch, epochIds)
+          // Use the FULL window range, not the snapshot-existing epochIds.
+          // Some epochs may have priority fees indexed but no snapshot
+          // (daily snapshot cron occasionally misses an epoch). We don't
+          // want to drop those fees from the report — they're real income.
+          gte(epochPriorityFees.epoch, windowFromEpoch),
+          lte(epochPriorityFees.epoch, windowToEpoch)
         )
       )
       .groupBy(epochPriorityFees.epoch)) as unknown as {
@@ -425,6 +430,48 @@ export async function GET(
 
       prevUnclaimed = currUnclaimed;
     }
+
+    // ── Fill in gap epochs (priority fees indexed, snapshot missing) ──
+    // The daily snapshot cron occasionally misses an epoch; the priority
+    // fee indexer doesn't. So we synthesize a row for any priority-fee
+    // epoch in the window that didn't make it into the loop above. Pool
+    // earned for that gap rolls into the next-existing snapshot's delta
+    // naturally (Δunclaimed already spans the gap), so we leave
+    // poolEarnedMon=0 here to avoid double counting — these rows exist
+    // only to surface priority fees + claim events the user actually saw.
+    const seenEpochs = new Set(epochsArray.map((r) => r.epoch));
+    for (const [epoch, pf] of pfMap.entries()) {
+      if (seenEpochs.has(epoch)) continue;
+      if (epoch < windowFromEpoch || epoch > windowToEpoch) continue;
+      const epochClaims = claimsByEpoch.get(epoch);
+      const claimedMon = epochClaims ? toMon(epochClaims.totalWei) : 0;
+      const fxPrice = fxFor(epoch);
+      const priorityFeesUsd = pf.feesMon * fxPrice;
+      epochsArray.push({
+        epoch,
+        // Approximate timestamp from neighboring snapshot if any.
+        timestamp: new Date().toISOString(),
+        stakeMon: 0,
+        selfStakeMon: 0,
+        commissionPct: meta.commissionPct ? Number(meta.commissionPct) : 0,
+        unclaimedMon: 0,
+        poolEarnedMon: 0,
+        validatorShareMon: 0,
+        claimedMon,
+        priorityFeesMon: pf.feesMon,
+        priorityFeeBlocks: pf.blocks,
+        fxPriceUsd: fxPrice,
+        validatorShareUsd: 0,
+        priorityFeesUsd,
+        commissionMon: 0,
+        commissionUsd: 0,
+      });
+      summaryClaimedMon += claimedMon;
+      summaryPriorityFeesMon += pf.feesMon;
+      summaryPriorityFeesUsd += priorityFeesUsd;
+    }
+    // Re-sort epochsArray by epoch ascending so table is in order.
+    epochsArray.sort((a, b) => a.epoch - b.epoch);
 
     // ── Second pass: derive validator share from empirical claim ratio ──
     //
