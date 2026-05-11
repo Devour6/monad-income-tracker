@@ -560,25 +560,44 @@ export default function ValidatorDashboard() {
                   Direct to validator wallet
                 </div>
               </div>
-              <div
-                className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5"
-                title="The whole pool's pending balance (commission + delegator yield combined). Distributed pro-rata to all delegators on next claim. Not counted as validator income because the on-chain decomposition isn't unambiguously specified."
-              >
-                <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5 inline-flex items-center gap-1.5">
-                  <Hourglass className="w-3 h-3 text-phase-yellow" />
-                  Pool pending
-                </div>
-                <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
-                  {fmtMon(data.summary.unclaimedMon)}
-                  <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
-                </div>
-                <div className="font-mono text-cream-60 text-sm mt-1">
-                  {fmtUsd(data.summary.unclaimedMon * data.summary.livePriceUsd)}
-                </div>
-                <div className="font-mono text-cream-40 text-[11px] mt-0.5">
-                  Pool-wide, distributed on next claim
-                </div>
-              </div>
+              {(() => {
+                // Estimate the validator's share of the pending pool:
+                //   commission × poolUnclaimed
+                //   + (1 - commission) × (selfStake / totalStake) × poolUnclaimed
+                // Rest belongs to other delegators. Latest epoch row supplies
+                // the freshest selfStake/totalStake split.
+                const lastEpochRow = data.epochs[data.epochs.length - 1];
+                const totalStake = lastEpochRow?.stakeMon || data.validator.stakeMon || 0;
+                const selfStake = lastEpochRow?.selfStakeMon || 0;
+                const commRate = (data.validator.commissionPct || 0) / 100;
+                const selfFrac = totalStake > 0 ? selfStake / totalStake : 0;
+                const yourShareOfPool =
+                  data.summary.unclaimedMon * commRate +
+                  data.summary.unclaimedMon * (1 - commRate) * selfFrac;
+                const delegatorsShare = data.summary.unclaimedMon - yourShareOfPool;
+                return (
+                  <div
+                    className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5"
+                    title={`Pool pending splits into ~${commRate * 100}% commission + ${(selfFrac * 100).toFixed(2)}% of remainder (your self-stake share). Rest belongs to other delegators and won't reach your wallet.`}
+                  >
+                    <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5 inline-flex items-center gap-1.5">
+                      <Hourglass className="w-3 h-3 text-phase-yellow" />
+                      Your pending share
+                    </div>
+                    <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
+                      {fmtMon(yourShareOfPool)}
+                      <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
+                    </div>
+                    <div className="font-mono text-cream-60 text-sm mt-1">
+                      {fmtUsd(yourShareOfPool * data.summary.livePriceUsd)}
+                    </div>
+                    <div className="font-mono text-cream-40 text-[11px] mt-0.5">
+                      of {fmtMon(data.summary.unclaimedMon)} MON pool pending ·{" "}
+                      {fmtMon(delegatorsShare)} owed to delegators
+                    </div>
+                  </div>
+                );
+              })()}
             </section>
 
             {/* Vitals row — 2 cols on mobile, 4 on tablet+ */}

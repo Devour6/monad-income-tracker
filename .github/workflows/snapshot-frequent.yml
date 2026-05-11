@@ -1,15 +1,17 @@
 name: Snapshot validators (every epoch)
 
-# Hits /api/cron/snapshot every hour. Monad epochs are ~5.5 hours each, so
-# this gives us 5-6 snapshots per epoch (plenty of density for the income
-# report endpoint to interpolate per-epoch pool growth without large gaps).
+# Hits /api/cron/snapshot every 15 minutes. Monad epochs are ~5.5 hours
+# (~330 min), so this gives us ~22 snapshots per epoch. That's overkill
+# for income reporting but it absorbs GitHub Actions' unreliable
+# scheduling — even if 90% of runs are skipped or delayed we still
+# capture every epoch.
 #
 # Vercel Hobby tier caps cron jobs at daily — that's why the snapshot
 # cadence here is driven by GitHub Actions instead of vercel.json.
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 jobs:
