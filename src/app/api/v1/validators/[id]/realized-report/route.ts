@@ -352,11 +352,14 @@ export async function GET(
         );
 
       // Filter precisely to window timestamps + aggregate per-epoch.
+      // Allow ~6 hours of slack past the most recent snapshot — the active
+      // epoch is still in progress and live MEV events are real income.
+      const ACTIVE_EPOCH_TOLERANCE_MS = 6 * 60 * 60 * 1000;
       for (const m of mevRows) {
         const ts = m.blockTimestamp.getTime();
         if (
           ts < firstSnapTs.getTime() ||
-          ts > lastSnapTs.getTime() + 60_000
+          ts > lastSnapTs.getTime() + ACTIVE_EPOCH_TOLERANCE_MS
         )
           continue;
         const payoutMon = toMon(BigInt(m.payoutWei));
