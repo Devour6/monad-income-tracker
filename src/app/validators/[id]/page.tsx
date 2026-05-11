@@ -534,11 +534,12 @@ export default function ValidatorDashboard() {
                     </>
                   ) : (
                     <>
-                      Pool earned in window:{" "}
-                      {fmtMon(
-                        data.epochs.reduce((s, e) => s + e.poolEarnedMon, 0)
-                      )}{" "}
-                      MON
+                      {fmtMon(data.summary.claimedMon)} MON withdrawn in window
+                      {data.claimEvents.length > 0
+                        ? ` · ${data.claimEvents.length} claim${
+                            data.claimEvents.length === 1 ? "" : "s"
+                          }`
+                        : ""}
                     </>
                   )}
                 </div>
