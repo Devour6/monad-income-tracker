@@ -8,6 +8,7 @@ import {
   minerAliases,
 } from "@/lib/db/schema";
 import { claimEvents } from "@/lib/db/claim-events-schema";
+import { mevPayouts } from "@/lib/db/mev-payouts-schema";
 import { eq, asc, inArray, sql, and, gte, lte } from "drizzle-orm";
 import { getLiveMonPrice } from "@/lib/price";
 
@@ -267,6 +268,124 @@ export async function GET(
         feesMon: toMon(BigInt(r.feesWei || "0")),
         blocks: Number(r.blocks || 0),
       });
+    }
+
+    // ── shMonad MEV payouts in window ───────────────────────────────
+    //
+    // Aggregate SendValidatorRewards events from the shMonad proxy. These
+    // are the per-block MEV/priority-fee payouts that flow from the
+    // validator's Coinbase contract back into the staking precompile.
+    //
+    //   validatorPayoutWei = MON sent to delegators via externalReward
+    //                       (eventually surfaces in claim_events)
+    //   feeTakenWei       = shMonad protocol revenue (boost commission)
+    //
+    // We bound by block_number using the window's first/last snapshot's
+    // block estimate — since mev_payouts has block-level granularity and
+    // snapshots don't, we approximate via the chain-time anchor.
+    //
+    // For an "all time" view we get every MEV payout for this validator;
+    // for a sliced window we bound by block number derived from the
+    // window's first/last snapshot timestamps.
+    const firstSnapTs = inWindow[0].createdAt;
+    const lastSnapTs = inWindow[inWindow.length - 1].createdAt;
+    // Approximate block range from chain-time anchor + epoch length
+    // (50000 blocks per ~5.5h epoch ~= 2.525 blocks per second).
+    const BLOCKS_PER_SECOND = 50000 / (5.5 * 3600);
+    const tsToBlockApprox = (ts: Date, anchorBlk: bigint, anchorTs: Date): bigint => {
+      const secondsDelta = (anchorTs.getTime() - ts.getTime()) / 1000;
+      const blocksDelta = BigInt(Math.floor(secondsDelta * BLOCKS_PER_SECOND));
+      return anchorBlk - blocksDelta;
+    };
+
+    // Find a recent MEV payout block as our anchor (close to chain head).
+    const mevAnchorRows = (await db.execute(sql`
+      SELECT MAX(block_number)::text AS max_blk, MAX(block_timestamp) AS max_ts
+      FROM mev_payouts
+    `)) as unknown as { rows?: unknown[] };
+    const mevAnchorList = Array.isArray(
+      (mevAnchorRows as { rows?: unknown[] }).rows
+    )
+      ? ((mevAnchorRows as { rows: unknown[] }).rows as Array<{
+          max_blk: string | null;
+          max_ts: Date | null;
+        }>)
+      : (mevAnchorRows as unknown as Array<{
+          max_blk: string | null;
+          max_ts: Date | null;
+        }>);
+
+    const mevAnchorBlk =
+      mevAnchorList[0]?.max_blk ? BigInt(mevAnchorList[0].max_blk) : null;
+    const mevAnchorTs = mevAnchorList[0]?.max_ts
+      ? new Date(mevAnchorList[0].max_ts)
+      : null;
+
+    let mevSummary = {
+      validatorPayoutMon: 0,
+      feeTakenMon: 0,
+      eventCount: 0,
+      perEpoch: new Map<number, { payoutMon: number; feeMon: number; n: number }>(),
+    };
+    if (mevAnchorBlk != null && mevAnchorTs != null) {
+      const fromBlk = tsToBlockApprox(firstSnapTs, mevAnchorBlk, mevAnchorTs);
+      const toBlk = tsToBlockApprox(lastSnapTs, mevAnchorBlk, mevAnchorTs);
+      // Pad +/-100k blocks to capture edge cases from clock drift.
+      const lowBlk = fromBlk - BigInt(100000);
+      const highBlk =
+        toBlk > mevAnchorBlk ? mevAnchorBlk + BigInt(50000) : toBlk + BigInt(100000);
+
+      const mevRows = await db
+        .select({
+          payoutWei: mevPayouts.validatorPayoutWei,
+          feeWei: mevPayouts.feeTakenWei,
+          blockTimestamp: mevPayouts.blockTimestamp,
+          blockNumber: mevPayouts.blockNumber,
+        })
+        .from(mevPayouts)
+        .where(
+          and(
+            eq(mevPayouts.validatorId, validatorId),
+            gte(mevPayouts.blockNumber, lowBlk > BigInt(0) ? lowBlk : BigInt(0)),
+            lte(mevPayouts.blockNumber, highBlk)
+          )
+        );
+
+      // Filter precisely to window timestamps + aggregate per-epoch.
+      for (const m of mevRows) {
+        const ts = m.blockTimestamp.getTime();
+        if (
+          ts < firstSnapTs.getTime() ||
+          ts > lastSnapTs.getTime() + 60_000
+        )
+          continue;
+        const payoutMon = toMon(BigInt(m.payoutWei));
+        const feeMon = toMon(BigInt(m.feeWei));
+        mevSummary.validatorPayoutMon += payoutMon;
+        mevSummary.feeTakenMon += feeMon;
+        mevSummary.eventCount += 1;
+        // Map to epoch — find the inWindow snapshot whose timestamp is
+        // nearest before this MEV event.
+        let epochForRow = inWindow[0].epoch;
+        for (let i = inWindow.length - 1; i >= 0; i--) {
+          if (inWindow[i].createdAt.getTime() <= ts) {
+            epochForRow = inWindow[i].epoch;
+            break;
+          }
+        }
+        const existing = mevSummary.perEpoch.get(epochForRow);
+        if (existing) {
+          existing.payoutMon += payoutMon;
+          existing.feeMon += feeMon;
+          existing.n += 1;
+        } else {
+          mevSummary.perEpoch.set(epochForRow, {
+            payoutMon,
+            feeMon,
+            n: 1,
+          });
+        }
+      }
     }
 
     // Group claims by epoch for the per-epoch table
@@ -733,6 +852,23 @@ export async function GET(
       serverCostMonthlyUsd,
       serverCostProRatedUsd,
       netUsd,
+      // shMonad MEV/priority-fee payouts (SendValidatorRewards events).
+      // mevValidatorPayoutMon = MON that flowed into the validator's stake
+      //   pool via STAKING.externalReward — already counted inside the
+      //   pool's claim_events stream once delegators claim, so this is
+      //   informational visibility, NOT added to totalIncome.
+      // mevFeeTakenMon = shMonad protocol revenue (does NOT reach the
+      //   validator).
+      // mevTotalCapturedMon = total MEV captured before the protocol fee.
+      mevValidatorPayoutMon: mevSummary.validatorPayoutMon,
+      mevValidatorPayoutUsd: mevSummary.validatorPayoutMon * livePrice,
+      mevFeeTakenMon: mevSummary.feeTakenMon,
+      mevFeeTakenUsd: mevSummary.feeTakenMon * livePrice,
+      mevTotalCapturedMon:
+        mevSummary.validatorPayoutMon + mevSummary.feeTakenMon,
+      mevTotalCapturedUsd:
+        (mevSummary.validatorPayoutMon + mevSummary.feeTakenMon) * livePrice,
+      mevEventCount: mevSummary.eventCount,
       fxMethodology: fx,
       endOfPeriodPriceUsd: endOfPeriodPrice,
       livePriceUsd: livePrice,

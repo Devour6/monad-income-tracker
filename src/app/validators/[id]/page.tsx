@@ -62,6 +62,14 @@ interface Report {
     serverCostMonthlyUsd: number;
     serverCostProRatedUsd: number;
     netUsd: number;
+    // shMonad MEV (informational — overlaps with claim_events, not added to totalIncome)
+    mevValidatorPayoutMon?: number;
+    mevValidatorPayoutUsd?: number;
+    mevFeeTakenMon?: number;
+    mevFeeTakenUsd?: number;
+    mevTotalCapturedMon?: number;
+    mevTotalCapturedUsd?: number;
+    mevEventCount?: number;
     fxMethodology: "per-epoch" | "end-of-period";
     endOfPeriodPriceUsd: number;
     livePriceUsd: number;
@@ -599,6 +607,62 @@ export default function ValidatorDashboard() {
                 );
               })()}
             </section>
+
+            {/* shMonad MEV strip — only show if this validator is enrolled
+                (mevTotalCapturedMon > 0). Otherwise hide the whole section
+                to avoid showing zeros to non-shMonad validators. */}
+            {(data.summary.mevTotalCapturedMon || 0) > 0 && (
+              <section className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                <div
+                  className="rounded-xl border border-phase-yellow/30 bg-phase-yellow/5 p-4 sm:p-5"
+                  title="Total MEV + priority fees captured by your shMonad Coinbase contract in this window. Indexed from SendValidatorRewards events on the shMonad proxy (0x1b68...e19c)."
+                >
+                  <div className="text-[10px] font-body uppercase tracking-widest text-phase-yellow mb-1.5">
+                    MEV captured
+                  </div>
+                  <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
+                    {fmtMon(data.summary.mevTotalCapturedMon || 0)}
+                    <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
+                  </div>
+                  <div className="font-mono text-cream-60 text-sm mt-1">
+                    {fmtUsd(data.summary.mevTotalCapturedUsd || 0)}
+                  </div>
+                  <div className="font-mono text-cream-40 text-[11px] mt-0.5">
+                    {data.summary.mevEventCount || 0} payout events
+                  </div>
+                </div>
+                <div className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5">
+                  <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5">
+                    → Pool inflow
+                  </div>
+                  <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
+                    {fmtMon(data.summary.mevValidatorPayoutMon || 0)}
+                    <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
+                  </div>
+                  <div className="font-mono text-cream-60 text-sm mt-1">
+                    {fmtUsd(data.summary.mevValidatorPayoutUsd || 0)}
+                  </div>
+                  <div className="font-mono text-cream-40 text-[11px] mt-0.5">
+                    Distributed to delegators on next claim
+                  </div>
+                </div>
+                <div className="rounded-xl border border-cream-12 bg-cream-5 p-4 sm:p-5">
+                  <div className="text-[10px] font-body uppercase tracking-widest text-cream-40 mb-1.5">
+                    shMonad protocol fee
+                  </div>
+                  <div className="font-display text-xl sm:text-2xl text-cream tracking-wide print:text-black">
+                    {fmtMon(data.summary.mevFeeTakenMon || 0)}
+                    <span className="text-cream-40 text-sm font-body ml-1.5">MON</span>
+                  </div>
+                  <div className="font-mono text-cream-60 text-sm mt-1">
+                    {fmtUsd(data.summary.mevFeeTakenUsd || 0)}
+                  </div>
+                  <div className="font-mono text-cream-40 text-[11px] mt-0.5">
+                    Boost commission to shMON holders
+                  </div>
+                </div>
+              </section>
+            )}
 
             {/* Vitals row — 2 cols on mobile, 4 on tablet+ */}
             <section className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
