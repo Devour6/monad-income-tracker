@@ -534,7 +534,12 @@ export async function GET(
     // share = pendingShare/windowPool ≈ 4%, dramatically undercounting
     // the validator's actual income for that window.
 
-    // Sum lifetime auth-address claims (NOT windowed).
+    // Sum lifetime auth-address claims, bounded to AFTER the first snapshot
+    // we have. The pool reconstruction below only spans our snapshot range,
+    // so we have to bound claims to the same range or the empirical share
+    // ratio comes out lopsided (claims older than our snapshot floor would
+    // be in the numerator but not the denominator).
+    const firstSnapEpoch = allSnaps[0].epoch;
     const lifetimeClaimsAggRaw = await db
       .select({
         totalWei: sql<string>`COALESCE(SUM(${claimEvents.amountWei}), 0)::text`,
@@ -543,7 +548,8 @@ export async function GET(
       .where(
         and(
           eq(claimEvents.validatorId, validatorId),
-          eq(claimEvents.delegator, auth)
+          eq(claimEvents.delegator, auth),
+          gte(claimEvents.epoch, firstSnapEpoch)
         )
       );
     const lifetimeClaimedMon = toMon(
@@ -552,13 +558,21 @@ export async function GET(
 
     // Reconstruct lifetime pool earned across ALL snapshots, not just
     // windowed ones. Same formula: Δ(unclaimed) + claims-in-that-epoch.
+    // Bound to claims AT OR AFTER the first snapshot — claims that
+    // happened before our snapshot history is in scope shouldn't be
+    // added back to a pool delta we can't observe.
     const allClaimsLifetimeRaw = await db
       .select({
         epoch: claimEvents.epoch,
         amountWei: claimEvents.amountWei,
       })
       .from(claimEvents)
-      .where(eq(claimEvents.validatorId, validatorId));
+      .where(
+        and(
+          eq(claimEvents.validatorId, validatorId),
+          gte(claimEvents.epoch, firstSnapEpoch)
+        )
+      );
     const allClaimsByEpochLifetime = new Map<number, bigint>();
     for (const c of allClaimsLifetimeRaw) {
       const wei = BigInt(c.amountWei);
