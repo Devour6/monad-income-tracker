@@ -567,16 +567,37 @@ export async function GET(
         (allClaimsByEpochLifetime.get(c.epoch) ?? BigInt(0)) + wei
       );
     }
+    // Sort claims-by-epoch for range summing. Snapshots are taken once per
+    // day (and missed days exist), so claim epochs almost never line up with
+    // snapshot epochs. We need to sum ALL claims that fell in
+    // (prevSnap.epoch, currSnap.epoch] — every claim drained the pool
+    // regardless of whether our cron happened to snapshot that exact epoch.
+    const sortedClaimEpochs = Array.from(
+      allClaimsByEpochLifetime.entries()
+    ).sort((a, b) => a[0] - b[0]);
+    let claimIdx = 0;
     let lifetimePoolEarnedMon = 0;
     let prevLifetimeUnclaimed = toMon(BigInt(allSnaps[0].unclaimedRewards));
+    let prevLifetimeEpoch = allSnaps[0].epoch;
     for (let i = 1; i < allSnaps.length; i++) {
       const s = allSnaps[i];
       const curr = toMon(BigInt(s.unclaimedRewards));
-      const claims = allClaimsByEpochLifetime.get(s.epoch);
-      const claimedMon = claims ? toMon(claims) : 0;
+      // Sum every claim wei whose epoch falls in (prevLifetimeEpoch, s.epoch].
+      let claimWei = BigInt(0);
+      while (
+        claimIdx < sortedClaimEpochs.length &&
+        sortedClaimEpochs[claimIdx][0] <= s.epoch
+      ) {
+        if (sortedClaimEpochs[claimIdx][0] > prevLifetimeEpoch) {
+          claimWei += sortedClaimEpochs[claimIdx][1];
+        }
+        claimIdx++;
+      }
+      const claimedMon = toMon(claimWei);
       const raw = curr - prevLifetimeUnclaimed + claimedMon;
       if (raw > 0) lifetimePoolEarnedMon += raw;
       prevLifetimeUnclaimed = curr;
+      prevLifetimeEpoch = s.epoch;
     }
 
     // Pro-rata pending share at lifetime view (uses last snapshot ever).
