@@ -1,0 +1,30 @@
+name: Snapshot validators (every epoch)
+
+# Hits /api/cron/snapshot every hour. Monad epochs are ~5.5 hours each, so
+# this gives us 5-6 snapshots per epoch (plenty of density for the income
+# report endpoint to interpolate per-epoch pool growth without large gaps).
+#
+# Vercel Hobby tier caps cron jobs at daily — that's why the snapshot
+# cadence here is driven by GitHub Actions instead of vercel.json.
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit snapshot endpoint
+        run: |
+          set -euo pipefail
+          URL="https://monad-income-tracker.vercel.app/api/cron/snapshot"
+          AUTH=""
+          if [ -n "${CRON_SECRET:-}" ]; then
+            AUTH="-H \"Authorization: Bearer ${CRON_SECRET}\""
+          fi
+          # shellcheck disable=SC2086
+          eval curl -sS -w '\nHTTP %{http_code}\n' --max-time 120 $AUTH "$URL"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

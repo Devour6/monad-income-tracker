@@ -334,111 +334,143 @@ export async function GET(
     let summaryPriorityFeesMon = 0;
     let summaryPriorityFeesUsd = 0;
 
-    // Walk window snapshots, computing commission accrual = change in
-    // unclaimed + amount claimed in that epoch. This matches the on-chain
-    // ledger exactly (no rate × pool projection).
+    // ── EPOCH-BY-EPOCH: cover every epoch in [windowFromEpoch, windowToEpoch],
+    //    not just ones with a snapshot.
+    //
+    // The daily snapshot cron stores ~1 row per validator per day, so a
+    // 7-day window often has only 4-7 snapshots covering 30+ epochs. The
+    // old loop iterated over snapshots only, leaving most epochs invisible
+    // (and lumping a whole day's pool growth into the day's single snapshot).
+    //
+    // New approach: for every epoch e in the window:
+    //   - find the snapshot just BEFORE or AT e (prevSnap) and the snapshot
+    //     just AFTER or AT e (nextSnap)
+    //   - per-epoch pool growth = (nextSnap.unclaimed − prevSnap.unclaimed
+    //                              + sum_of_all_claims_in_(prevSnap, nextSnap])
+    //                              / (nextSnap.epoch − prevSnap.epoch)
+    //     i.e. distribute the inter-snapshot delta evenly across the gap.
+    //   - claimed = claim events with the auth address dated to that epoch
+    //   - stake / commission rate / self stake = carried from prevSnap
+    //   - timestamp = prevSnap.createdAt + (e − prevSnap.epoch) × epochLenMs
+    //
+    // This makes the per-epoch table dense and matches what the validator
+    // actually earned on-chain even when our cron only snapshots once/day.
     const baselineIdx =
       allSnaps.findIndex((s) => s.epoch >= windowFromEpoch!) - 1;
     const baseline = baselineIdx >= 0 ? allSnaps[baselineIdx] : null;
+    const orderedSnaps: typeof allSnaps = [];
+    if (baseline) orderedSnaps.push(baseline);
+    for (const s of inWindow) orderedSnaps.push(s);
 
-    let prevUnclaimed = baseline
-      ? toMon(BigInt(baseline.unclaimedRewards))
-      : toMon(BigInt(inWindow[0].unclaimedRewards));
-    const firstWindowEpoch = baseline ? null : inWindow[0].epoch;
+    const EPOCH_LEN_MS = (1 / EPOCHS_PER_DAY) * 86_400_000;
+    // Estimate the chain time of an epoch from the closest snapshot anchor.
+    // Reuse `anchor` declared above for date→epoch translation.
+    const epochTimestamp = (e: number): string =>
+      new Date(anchorMs - (anchor.epoch - e) * EPOCH_LEN_MS).toISOString();
 
-    for (const s of inWindow) {
-      const currUnclaimed = toMon(BigInt(s.unclaimedRewards));
-      const epochClaims = claimsByEpoch.get(s.epoch);
-      // Auth-address claim amount (what reached the validator's wallet).
+    // For each gap (prevSnap, nextSnap), pre-compute the per-epoch
+    // distributed pool growth + per-epoch carrier values.
+    interface GapInfo {
+      perEpochPoolMon: number;
+      stakeMon: number;
+      selfStakeMon: number;
+      commissionPct: number;
+      unclaimedAtPrev: number;
+    }
+    const gapInfo = new Map<number, GapInfo>(); // key = epoch within gap
+    for (let i = 1; i < orderedSnaps.length; i++) {
+      const prev = orderedSnaps[i - 1];
+      const next = orderedSnaps[i];
+      const prevUnclaimed = toMon(BigInt(prev.unclaimedRewards));
+      const nextUnclaimed = toMon(BigInt(next.unclaimedRewards));
+      // Sum claims with epoch in (prev.epoch, next.epoch].
+      let claimsInGapWei = BigInt(0);
+      for (const [ce, cw] of allClaimsByEpoch.entries()) {
+        if (ce > prev.epoch && ce <= next.epoch) claimsInGapWei += cw;
+      }
+      const claimsInGapMon = toMon(claimsInGapWei);
+      const gapSpan = next.epoch - prev.epoch;
+      const totalPoolGapMon = Math.max(
+        0,
+        nextUnclaimed - prevUnclaimed + claimsInGapMon
+      );
+      const perEpoch = gapSpan > 0 ? totalPoolGapMon / gapSpan : 0;
+      const stakeMon = toMon(BigInt(prev.stakeWei));
+      const selfStakeMon = prev.selfStakeWei
+        ? toMon(BigInt(prev.selfStakeWei))
+        : 0;
+      const commissionPct = (Number(BigInt(prev.commission)) / 1e18) * 100;
+      // Apply to every epoch (prev.epoch, next.epoch], capped to window.
+      for (let e = prev.epoch + 1; e <= next.epoch; e++) {
+        if (e < windowFromEpoch || e > windowToEpoch) continue;
+        gapInfo.set(e, {
+          perEpochPoolMon: perEpoch,
+          stakeMon,
+          selfStakeMon,
+          commissionPct,
+          unclaimedAtPrev: prevUnclaimed,
+        });
+      }
+    }
+    // If the very first window epoch has no preceding snapshot, still
+    // emit a row using the first snapshot's carrier values (no pool growth
+    // because we have no baseline to subtract from).
+    if (!baseline && inWindow.length > 0) {
+      const first = inWindow[0];
+      if (first.epoch >= windowFromEpoch && !gapInfo.has(first.epoch)) {
+        gapInfo.set(first.epoch, {
+          perEpochPoolMon: 0,
+          stakeMon: toMon(BigInt(first.stakeWei)),
+          selfStakeMon: first.selfStakeWei
+            ? toMon(BigInt(first.selfStakeWei))
+            : 0,
+          commissionPct: (Number(BigInt(first.commission)) / 1e18) * 100,
+          unclaimedAtPrev: toMon(BigInt(first.unclaimedRewards)),
+        });
+      }
+    }
+
+    for (let epoch = windowFromEpoch; epoch <= windowToEpoch; epoch++) {
+      // Skip epochs we don't have any data for (entirely outside snapshot range).
+      const gi = gapInfo.get(epoch);
+      if (!gi) continue;
+
+      const epochClaims = claimsByEpoch.get(epoch);
       const claimedMon = epochClaims ? toMon(epochClaims.totalWei) : 0;
-      // ALL claims in this epoch (any delegator). Needed to reconstruct
-      // the pool growth correctly: when ANY delegator pulls funds out,
-      // unclaimed_rewards drops by their share, so we add back all claims.
-      const allClaimsThisEpochWei = allClaimsByEpoch.get(s.epoch) ?? BigInt(0);
-      const allClaimsThisEpochMon = toMon(allClaimsThisEpochWei);
-
-      // Pool-wide earnings this epoch = unclaimed delta + every wei that
-      // exited via claim events that epoch. For the first row when we
-      // have no baseline, suppress accrual.
-      //
-      // Negative values can occur when a claim's block timestamp puts it
-      // in a different epoch than the unclaimed delta we observe (the
-      // claim_events epoch field is the validator's epoch at the time of
-      // the tx, which can lag the snapshot epoch by 1 due to the staking
-      // precompile's delay rounds). We carry the missed amount forward
-      // so cumulative sums stay correct.
-      const rawPoolEarned =
-        s.epoch === firstWindowEpoch
-          ? 0
-          : currUnclaimed - prevUnclaimed + allClaimsThisEpochMon;
-      const poolEarnedMon = Math.max(0, rawPoolEarned);
-
-      const stakeWei = BigInt(s.stakeWei);
-      const selfStakeWei = s.selfStakeWei
-        ? BigInt(s.selfStakeWei)
-        : BigInt(0);
-      const stakeMon = toMon(stakeWei);
-      const selfStakeMon = toMon(selfStakeWei);
-
-      // Validator's per-epoch on-chain earnings.
-      //
-      // We derive this from the AUTH ADDRESS's claim history relative to
-      // total pool growth — empirical, not modeled. The auth address's
-      // position in the pool (delegator share + commission) determines
-      // exactly what fraction of every epoch's pool growth they own, and
-      // their cumulative claims tell us that fraction directly:
-      //
-      //   authShare = (totalAuthClaimedInWindow + authPendingShare) /
-      //               totalPoolEarnedInWindow
-      //
-      // We compute this scalar once after the loop and back-fill the
-      // validatorShare per row. For now, store poolEarned and we'll
-      // apply the multiplier in a second pass.
-      const validatorShareMon = 0; // placeholder — set in second pass below
-
-      const commissionPctRaw = Number(BigInt(s.commission)) / 1e18;
-      const pf = pfMap.get(s.epoch);
+      const pf = pfMap.get(epoch);
       const priorityFeesMon = pf?.feesMon ?? 0;
       const priorityFeeBlocks = pf?.blocks ?? 0;
-      const fxPrice = fxFor(s.epoch);
-      const validatorShareUsd = validatorShareMon * fxPrice;
+      const fxPrice = fxFor(epoch);
       const priorityFeesUsd = priorityFeesMon * fxPrice;
 
       epochsArray.push({
-        epoch: s.epoch,
-        timestamp: s.createdAt.toISOString(),
-        stakeMon,
-        selfStakeMon,
-        commissionPct: commissionPctRaw * 100,
-        unclaimedMon: currUnclaimed,
-        poolEarnedMon,
-        validatorShareMon,
+        epoch,
+        timestamp: epochTimestamp(epoch),
+        stakeMon: gi.stakeMon,
+        selfStakeMon: gi.selfStakeMon,
+        commissionPct: gi.commissionPct,
+        unclaimedMon: gi.unclaimedAtPrev,
+        poolEarnedMon: gi.perEpochPoolMon,
+        validatorShareMon: 0, // backfilled in second pass
         claimedMon,
         priorityFeesMon,
         priorityFeeBlocks,
         fxPriceUsd: fxPrice,
-        validatorShareUsd,
+        validatorShareUsd: 0,
         priorityFeesUsd,
-        // Legacy aliases.
-        commissionMon: validatorShareMon,
-        commissionUsd: validatorShareUsd,
+        commissionMon: 0,
+        commissionUsd: 0,
       });
 
       summaryClaimedMon += claimedMon;
       summaryPriorityFeesMon += priorityFeesMon;
       summaryPriorityFeesUsd += priorityFeesUsd;
-
-      prevUnclaimed = currUnclaimed;
     }
 
-    // ── Fill in gap epochs (priority fees indexed, snapshot missing) ──
-    // The daily snapshot cron occasionally misses an epoch; the priority
-    // fee indexer doesn't. So we synthesize a row for any priority-fee
-    // epoch in the window that didn't make it into the loop above. Pool
-    // earned for that gap rolls into the next-existing snapshot's delta
-    // naturally (Δunclaimed already spans the gap), so we leave
-    // poolEarnedMon=0 here to avoid double counting — these rows exist
-    // only to surface priority fees + claim events the user actually saw.
+    // ── Fill in gap epochs (priority fees indexed, no snapshot coverage) ──
+    // For epochs with priority fees but outside the snapshot range
+    // entirely (e.g. before the earliest snapshot), emit a row with
+    // estimated timestamp and zero pool earned.
     const seenEpochs = new Set(epochsArray.map((r) => r.epoch));
     for (const [epoch, pf] of pfMap.entries()) {
       if (seenEpochs.has(epoch)) continue;
@@ -449,8 +481,7 @@ export async function GET(
       const priorityFeesUsd = pf.feesMon * fxPrice;
       epochsArray.push({
         epoch,
-        // Approximate timestamp from neighboring snapshot if any.
-        timestamp: new Date().toISOString(),
+        timestamp: epochTimestamp(epoch),
         stakeMon: 0,
         selfStakeMon: 0,
         commissionPct: meta.commissionPct ? Number(meta.commissionPct) : 0,
