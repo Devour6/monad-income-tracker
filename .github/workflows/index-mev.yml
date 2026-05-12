@@ -1,0 +1,27 @@
+name: Index shMonad MEV payouts
+
+# Hits /api/cron/index-mev every 5 min. Indexes SendValidatorRewards events
+# from the shMonad proxy (0x1b68626dca36c7fe922fd2d55e4f631d962de19c) — these
+# are the per-block MEV/priority-fee payouts to validator stake pools.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit cron endpoint
+        run: |
+          set -euo pipefail
+          URL="https://monad-income-tracker.vercel.app/api/cron/index-mev"
+          AUTH=""
+          if [ -n "${CRON_SECRET:-}" ]; then
+            AUTH="-H \"Authorization: Bearer ${CRON_SECRET}\""
+          fi
+          # shellcheck disable=SC2086
+          eval curl -sS -w '\nHTTP %{http_code}\n' --max-time 90 $AUTH "$URL"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
