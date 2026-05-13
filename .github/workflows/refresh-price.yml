@@ -1,13 +1,13 @@
 name: Refresh MON price
 
-# Pings /api/cron/refresh-price every 2 minutes so the DB-stored MON price
+# Pings /api/cron/refresh-price every 10 minutes so the DB-stored MON price
 # (read by network/overview, income, MEV, simulator, reports) tracks live
-# market price within 2 min instead of lagging up to 24h with the daily
-# snapshot cron.
+# market price within ~10 min. Previously ran every 2 min — slowed down to
+# every 10 min to stay under GitHub Actions free-tier minutes.
 
 on:
   schedule:
-    - cron: "*/2 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 jobs:
