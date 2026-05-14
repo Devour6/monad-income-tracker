@@ -7,7 +7,7 @@ import {
   getValidators,
   getMonPrice,
   calculateEpochReward,
-  getSelfStakes,
+  getDelegatorState,
 } from "@/lib/monad-rpc";
 import { eq, sql, desc } from "drizzle-orm";
 import { VALIDATOR_NAMES, fetchFreshRegistry } from "@/data/validator-names";
@@ -73,25 +73,33 @@ export async function GET(request: Request) {
     const validatorData = await getValidators(validatorIds);
     console.log(`[snapshot] Fetched data for ${validatorData.length} validators`);
 
-    // 5. Get MON price + fresh validator registry + self-stakes (one RPC call
-    //    per validator against getDelegator(validatorId, authAddress) — the
-    //    staking precompile doesn't expose self-stake on getValidator so we
-    //    have to query the validator's own delegation entry directly).
-    const [monPrice, nameRegistry, selfStakeMap] = await Promise.all([
+    // 5. Get MON price + fresh registry + per-validator auth delegator state
+    //    (self-stake + auth pending unclaimed). One getDelegator(valId, auth)
+    //    call per validator captures both slots: stake (self-stake) and
+    //    totalRewards (= pending claimable). The pending number is the
+    //    on-chain truth for "what would claimRewards pay out right now" and
+    //    feeds the income report endpoint directly — no derivation.
+    const [monPrice, nameRegistry, delegatorMap] = await Promise.all([
       getMonPrice(),
       fetchFreshRegistry().catch(() => VALIDATOR_NAMES),
-      getSelfStakes(
+      getDelegatorState(
         validatorData.map((v) => ({
           validatorId: v.validatorId,
           authAddress: v.authAddress,
         }))
       ).catch((err) => {
-        console.log("[snapshot] getSelfStakes failed:", err);
-        return new Map<number, bigint>();
+        console.log("[snapshot] getDelegatorState failed:", err);
+        return new Map<number, { stakeWei: bigint; unclaimedWei: bigint }>();
       }),
     ]);
+    const selfStakeMap = new Map<number, bigint>();
+    const authUnclaimedMap = new Map<number, bigint>();
+    for (const [vid, st] of delegatorMap.entries()) {
+      selfStakeMap.set(vid, st.stakeWei);
+      authUnclaimedMap.set(vid, st.unclaimedWei);
+    }
     console.log(
-      `[snapshot] Fetched self-stake for ${selfStakeMap.size}/${validatorData.length} validators`
+      `[snapshot] Fetched delegator state for ${delegatorMap.size}/${validatorData.length} validators`
     );
 
     // 6. Get the most recent previous epoch's snapshots for delta computation
@@ -185,6 +193,38 @@ export async function GET(request: Request) {
         const batch = snapshotRows.slice(i, i + 50);
         await db.insert(epochSnapshots).values(batch);
       }
+    }
+
+    // 8b. Write per-validator auth-address pending unclaimed (slot 2 of
+    //     getDelegator) to epoch_snapshots.auth_unclaimed_wei. Strict
+    //     on-chain truth — exact "what claimRewards would pay out". Used by
+    //     the income report endpoint to compute validator earnings per epoch
+    //     without any modeling.
+    if (authUnclaimedMap.size > 0) {
+      const updates: Array<{ vid: number; wei: string }> = [];
+      for (const [vid, wei] of authUnclaimedMap.entries()) {
+        updates.push({ vid, wei: wei.toString() });
+      }
+      // Batch update via UNNEST so we do this in O(1) round-trips.
+      for (let i = 0; i < updates.length; i += 100) {
+        const batch = updates.slice(i, i + 100);
+        const vids = batch.map((u) => u.vid);
+        const weis = batch.map((u) => u.wei);
+        await db.execute(sql`
+          UPDATE epoch_snapshots
+             SET auth_unclaimed_wei = u.wei
+            FROM (
+              SELECT
+                UNNEST(${vids}::int[])   AS vid,
+                UNNEST(${weis}::text[]) AS wei
+            ) AS u
+           WHERE epoch_snapshots.epoch = ${epoch}
+             AND epoch_snapshots.validator_id = u.vid
+        `);
+      }
+      console.log(
+        `[snapshot] auth_unclaimed_wei updated for ${updates.length} validators @ epoch ${epoch}`
+      );
     }
 
     // 9. Batch upsert validator metadata (50 at a time to avoid query size limits)

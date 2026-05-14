@@ -385,6 +385,53 @@ function decodeDelegatorResponse(
 }
 
 /**
+ * Batch-fetch BOTH self-stake AND auth-address pending unclaimed for a list
+ * of (validatorId, authAddress) pairs. Single RPC pass via batchEthCall.
+ *
+ * Returns a Map keyed by validatorId -> { stakeWei, unclaimedWei }, both bigint.
+ * `unclaimedWei` is slot 2 of getDelegator — the exact "what would claimRewards
+ * pay out right now" amount. On-chain truth, no modeling.
+ *
+ * Missing entries in the map mean the RPC call failed for that validator.
+ */
+export async function getDelegatorState(
+  pairs: Array<{ validatorId: number; authAddress: string }>
+): Promise<Map<number, { stakeWei: bigint; unclaimedWei: bigint }>> {
+  if (pairs.length === 0) return new Map();
+
+  const calls = pairs.map((p, i) => ({
+    data: buildGetDelegatorCalldata(p.validatorId, p.authAddress),
+    id: i,
+  }));
+
+  const results = await batchEthCall(calls);
+  const out = new Map<number, { stakeWei: bigint; unclaimedWei: bigint }>();
+
+  for (let i = 0; i < pairs.length; i++) {
+    const hex = results.get(i);
+    if (!hex || hex === "0x") continue;
+    try {
+      const snap = decodeDelegatorResponse(
+        hex,
+        pairs[i].validatorId,
+        pairs[i].authAddress
+      );
+      out.set(pairs[i].validatorId, {
+        stakeWei: snap.stakeWei,
+        unclaimedWei: snap.totalRewards,
+      });
+    } catch (err) {
+      console.log(
+        `[rpc] Failed to decode delegator response for validator ${pairs[i].validatorId}:`,
+        err
+      );
+    }
+  }
+
+  return out;
+}
+
+/**
  * Batch-fetch self-stake for a list of (validatorId, authAddress) pairs.
  * Returns a Map keyed by validatorId -> stake in wei (bigint).
  * Missing entries in the map mean the RPC call failed for that validator.

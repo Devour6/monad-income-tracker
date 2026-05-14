@@ -85,6 +85,24 @@ export async function GET(
       .where(eq(epochSnapshots.validatorId, validatorId))
       .orderBy(asc(epochSnapshots.epoch));
 
+    // Pull auth-address pending unclaimed per epoch (new column,
+    // populated by snapshot cron from getDelegator slot 2). Join in
+    // JS — Drizzle schema isn't aware of the column yet.
+    const authUncRows = (await db.execute(sql`
+      SELECT epoch, auth_unclaimed_wei
+        FROM epoch_snapshots
+       WHERE validator_id = ${validatorId}
+         AND auth_unclaimed_wei IS NOT NULL
+    `)) as unknown as { rows?: Array<{ epoch: number; auth_unclaimed_wei: string }> };
+    const authUncList: Array<{ epoch: number; auth_unclaimed_wei: string }> =
+      Array.isArray((authUncRows as { rows?: unknown[] }).rows)
+        ? (authUncRows as { rows: Array<{ epoch: number; auth_unclaimed_wei: string }> }).rows
+        : (authUncRows as unknown as Array<{ epoch: number; auth_unclaimed_wei: string }>);
+    const authUncByEpoch = new Map<number, bigint>();
+    for (const r of authUncList) {
+      authUncByEpoch.set(Number(r.epoch), BigInt(r.auth_unclaimed_wei));
+    }
+
     if (allSnaps.length === 0) {
       return NextResponse.json({
         validatorId,
@@ -736,49 +754,82 @@ export async function GET(
       prevLifetimeEpoch = s.epoch;
     }
 
-    // Pro-rata pending share at lifetime view (uses last snapshot ever).
+    // ── Strict on-chain per-epoch validator share ──
+    //
+    // For every epoch in the window, the validator's actual earned MON is:
+    //   Δ(auth_unclaimed_wei) + claims_by_auth_in_that_epoch
+    //
+    // Where auth_unclaimed_wei comes from getDelegator(valId, authAddr).slot[2]
+    // — the precompile's exact "what claimRewards() would pay out right now"
+    // for the auth address. Sampled at each snapshot by the snapshot cron.
+    //
+    // No empirical scalars. No pool × ratio. No modeling. This is the on-chain
+    // ledger of what the validator's auth address actually accrued.
+    //
+    // Fallback: if auth_unclaimed_wei is NULL for an epoch (pre-migration
+    // snapshots), the row's validatorShareMon defaults to 0 — better to
+    // undercount visibly than overshoot with a derived guess.
     const lastEverSnap = allSnaps[allSnaps.length - 1];
-    const lastEverStakeWei = BigInt(lastEverSnap.stakeWei);
-    const lastEverSelfWei = lastEverSnap.selfStakeWei
-      ? BigInt(lastEverSnap.selfStakeWei)
-      : BigInt(0);
-    const lastEverUnclaimed = toMon(BigInt(lastEverSnap.unclaimedRewards));
-    const lastEverCommissionRate =
-      Number(BigInt(lastEverSnap.commission)) / 1e18;
-    const lastEverSelfFraction =
-      lastEverStakeWei > BigInt(0) && lastEverSelfWei > BigInt(0)
-        ? Number(lastEverSelfWei) / Number(lastEverStakeWei)
-        : 0;
-    const lifetimePendingShareMon =
-      lastEverUnclaimed * lastEverCommissionRate +
-      lastEverUnclaimed * (1 - lastEverCommissionRate) * lastEverSelfFraction;
+    const currentAuthUncMon = toMon(
+      authUncByEpoch.get(lastEverSnap.epoch) ?? BigInt(0)
+    );
+    const lifetimeAuthEarnedMon = lifetimeClaimedMon + currentAuthUncMon;
 
-    const lifetimeAuthEarnedMon =
-      lifetimeClaimedMon + lifetimePendingShareMon;
+    // Track most recent observed auth_unclaimed BEFORE the window starts,
+    // so the first in-window epoch's delta is correct.
+    const baselineSnap = baseline; // already computed earlier for pool math
+    let prevAuthUncWei: bigint | null = null;
+    if (baselineSnap && authUncByEpoch.has(baselineSnap.epoch)) {
+      prevAuthUncWei = authUncByEpoch.get(baselineSnap.epoch)!;
+    } else {
+      // Find the latest snapshot strictly before the window with auth data.
+      for (let i = allSnaps.length - 1; i >= 0; i--) {
+        const s = allSnaps[i];
+        if (s.epoch >= (windowFromEpoch ?? Number.MIN_SAFE_INTEGER)) continue;
+        const v = authUncByEpoch.get(s.epoch);
+        if (v != null) {
+          prevAuthUncWei = v;
+          break;
+        }
+      }
+    }
 
-    // Empirical share = (lifetime claims + lifetime pendingShare) /
-    // lifetime pool earned. This scalar is stable across windows.
-    const empiricalShare =
-      lifetimePoolEarnedMon > 0
-        ? lifetimeAuthEarnedMon / lifetimePoolEarnedMon
-        : 0;
-
-    // Window-scoped totals for the summary card (windowed pool × scalar).
-    let totalPoolEarnedMon = 0;
-    for (const r of epochsArray) totalPoolEarnedMon += r.poolEarnedMon;
-    const proRataPendingShare = lifetimePendingShareMon; // for compat below
-    const totalAuthEarnedMon = summaryClaimedMon + proRataPendingShare;
     let summaryCommissionMon = 0;
     let summaryCommissionUsd = 0;
     for (const r of epochsArray) {
-      r.validatorShareMon = r.poolEarnedMon * empiricalShare;
-      r.validatorShareUsd = r.validatorShareMon * r.fxPriceUsd;
-      // Update legacy aliases.
-      r.commissionMon = r.validatorShareMon;
+      const currAuthUnc = authUncByEpoch.get(r.epoch);
+      const claimWei = claimsByEpoch.get(r.epoch)?.totalWei ?? BigInt(0);
+      let earnedMon = 0;
+      if (currAuthUnc != null) {
+        const deltaWei = prevAuthUncWei != null
+          ? currAuthUnc - prevAuthUncWei
+          : BigInt(0);
+        // Δ(auth_unclaimed) + claimsByAuthThisEpoch = on-chain truth.
+        // A claim resets the slot to 0 then it grows again — claimWei
+        // adds back what was paid out.
+        const totalEarnedWei = deltaWei + claimWei;
+        earnedMon = totalEarnedWei > BigInt(0) ? toMon(totalEarnedWei) : 0;
+        prevAuthUncWei = currAuthUnc;
+      } else {
+        // No auth_unclaimed_wei yet for this epoch (pre-migration).
+        // Only count literal claims in this epoch. Better to undercount
+        // visibly than to model.
+        if (claimWei > BigInt(0)) earnedMon = toMon(claimWei);
+      }
+      r.validatorShareMon = earnedMon;
+      r.validatorShareUsd = earnedMon * r.fxPriceUsd;
+      r.commissionMon = earnedMon;
       r.commissionUsd = r.validatorShareUsd;
-      summaryCommissionMon += r.validatorShareMon;
+      summaryCommissionMon += earnedMon;
       summaryCommissionUsd += r.validatorShareUsd;
     }
+    // Mark lifetime totals consistent — keeps downstream code happy.
+    const totalPoolEarnedMon = lifetimePoolEarnedMon; // informational only
+    const proRataPendingShare = currentAuthUncMon;
+    const totalAuthEarnedMon = lifetimeAuthEarnedMon;
+    void totalPoolEarnedMon; // silence unused-warning if any
+    void proRataPendingShare;
+    void totalAuthEarnedMon;
 
     // Window timestamps + days observed (from snapshot epoch span, not claim ts)
     const firstTs = inWindow[0].createdAt;
