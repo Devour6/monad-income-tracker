@@ -1,16 +1,14 @@
-// Historical backfill of epoch_snapshots.auth_unclaimed_wei across multiple
-// epochs by calling getDelegator(valId, auth) at the block tag closest to
-// each snapshot's wall-clock time.
+// Historical backfill of epoch_snapshots.auth_unclaimed_wei by calling
+// getDelegator(valId, auth) at the START BLOCK of each target epoch.
 //
-// Approach:
-//   1. Map each snapshot's created_at → block_number via timestamp search
-//      (binary search using eth_getBlockByNumber).
-//   2. Batch eth_call at that historical block tag for every validator.
-//   3. Decode slot 2 (totalRewards = pending) and write to DB.
+// Epoch boundaries on Monad are deterministic: 50,000 blocks per epoch.
+// Anchor: epoch_priority_fees.first_block tells us the start block of
+// any known epoch. Every other epoch's start = anchor + (epoch - anchor) * 50000.
+// Way faster + correct (no buggy timestamp binary search).
 //
 // Usage:
 //   DATABASE_URL=... MONAD_RPC=... \
-//     FROM_EPOCH=1460 TO_EPOCH=1491 \
+//     FROM_EPOCH=1400 TO_EPOCH=1462 \
 //     node scripts/backfill-auth-unclaimed-historical.mjs
 import { neon } from "@neondatabase/serverless";
 
@@ -25,6 +23,7 @@ const RPC =
 
 const STAKING = "0x0000000000000000000000000000000000001000";
 const GET_DELEGATOR = "573c1ce0";
+const EPOCH_LEN = 50000n;
 
 function encodeUint64(n) {
   return BigInt(n).toString(16).padStart(64, "0");
@@ -34,17 +33,6 @@ function encodeAddress(addr) {
 }
 function buildCalldata(valId, auth) {
   return "0x" + GET_DELEGATOR + encodeUint64(valId) + encodeAddress(auth);
-}
-
-async function rpc(method, params) {
-  const r = await fetch(RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const j = await r.json();
-  if (j.error) throw new Error(method + ": " + j.error.message);
-  return j.result;
 }
 
 async function rpcBatch(reqs) {
@@ -57,69 +45,54 @@ async function rpcBatch(reqs) {
   return r.json();
 }
 
-async function getBlockTimestamp(blk) {
-  const b = await rpc("eth_getBlockByNumber", ["0x" + blk.toString(16), false]);
-  return b ? Number(BigInt(b.timestamp)) * 1000 : null; // ms
-}
-
-// Find a block number whose timestamp is just <= targetMs.
-async function findBlockAtTime(targetMs, lo, hi) {
-  while (lo + 1n < hi) {
-    const mid = (lo + hi) / 2n;
-    const ts = await getBlockTimestamp(mid);
-    if (ts == null) return null;
-    if (ts <= targetMs) lo = mid;
-    else hi = mid;
-  }
-  return lo;
-}
-
 const FROM_EPOCH = process.env.FROM_EPOCH ? Number(process.env.FROM_EPOCH) : null;
 const TO_EPOCH = process.env.TO_EPOCH ? Number(process.env.TO_EPOCH) : null;
-
 if (FROM_EPOCH == null || TO_EPOCH == null) {
   console.error("Set FROM_EPOCH and TO_EPOCH env vars");
   process.exit(1);
 }
 
-console.log(`historical auth_unclaimed backfill: epochs ${FROM_EPOCH}-${TO_EPOCH}`);
+console.log(`backfill: epochs ${FROM_EPOCH}-${TO_EPOCH}`);
 
-const head = BigInt(await rpc("eth_blockNumber", []));
-console.log(`chain head: ${head}`);
+// Anchor: any (epoch, first_block) pair from epoch_priority_fees.
+const anchorRow = await sql`
+  SELECT epoch, MIN(first_block)::text AS first_blk
+    FROM epoch_priority_fees
+   GROUP BY epoch
+   ORDER BY epoch ASC
+   LIMIT 1
+`;
+if (anchorRow.length === 0) {
+  console.error("no epoch_priority_fees data to anchor epoch boundaries");
+  process.exit(1);
+}
+const anchorEpoch = BigInt(anchorRow[0].epoch);
+const anchorBlock = BigInt(anchorRow[0].first_blk);
+console.log(`anchor: epoch ${anchorEpoch} starts at block ${anchorBlock}`);
 
-// Get all snapshots needing fill in that range, oldest first (binary search
-// uses prior epoch's block as low bound to speed up subsequent searches).
-const epochList = await sql`
-  SELECT epoch, MIN(created_at) AS first_seen
+const epochsNeeded = await sql`
+  SELECT DISTINCT epoch
     FROM epoch_snapshots
    WHERE epoch BETWEEN ${FROM_EPOCH} AND ${TO_EPOCH}
      AND auth_unclaimed_wei IS NULL
-   GROUP BY epoch
    ORDER BY epoch ASC
 `;
-console.log(`${epochList.length} epochs to fill`);
+console.log(`${epochsNeeded.length} epochs need fill`);
 
 const validators = await sql`SELECT validator_id, auth_address FROM validators`;
 const validatorList = validators.map((v) => ({
   validator_id: v.validator_id,
   auth_address: v.auth_address,
 }));
-console.log(`${validatorList.length} validators to query`);
+console.log(`${validatorList.length} validators per epoch`);
 
-let priorBlock = head - 5_000_000n; // initial lo for first binary search (5M blk back ≈ 21 days)
-for (const { epoch, first_seen } of epochList) {
-  const targetMs = new Date(first_seen).getTime();
-  console.log(`\n=== epoch ${epoch} @ ${new Date(targetMs).toISOString()} ===`);
-  const blk = await findBlockAtTime(targetMs, priorBlock, head);
-  if (blk == null) {
-    console.log("  could not find block, skipping");
-    continue;
-  }
-  const blkTs = await getBlockTimestamp(blk);
-  console.log(`  block=${blk} (ts=${new Date(blkTs).toISOString()})`);
-  priorBlock = blk; // narrow search for next epoch (always older next? no, ASC sorted)
+for (const { epoch } of epochsNeeded) {
+  const ep = BigInt(epoch);
+  // Use mid-epoch block (start + 25000) for state queries — avoids any
+  // boundary-block edge cases.
+  const midBlock = anchorBlock + (ep - anchorEpoch) * EPOCH_LEN + EPOCH_LEN / 2n;
+  console.log(`\n=== epoch ${epoch} → block ${midBlock} ===`);
 
-  // Batch eth_call at that historical block tag
   let updated = 0;
   let failed = 0;
   const BATCH = 50;
@@ -131,14 +104,14 @@ for (const { epoch, first_seen } of epochList) {
       method: "eth_call",
       params: [
         { to: STAKING, data: buildCalldata(v.validator_id, v.auth_address) },
-        "0x" + blk.toString(16),
+        "0x" + midBlock.toString(16),
       ],
     }));
     let resps;
     try {
       resps = await rpcBatch(reqs);
     } catch (e) {
-      console.log(`  batch failed: ${e.message}`);
+      console.log(`  batch err: ${e.message}`);
       failed += slice.length;
       continue;
     }
@@ -165,7 +138,7 @@ for (const { epoch, first_seen } of epochList) {
              AND auth_unclaimed_wei IS NULL
         `;
         updated++;
-      } catch (e) {
+      } catch {
         failed++;
       }
     }
