@@ -205,21 +205,14 @@ export async function GET(request: Request) {
       for (const [vid, wei] of authUnclaimedMap.entries()) {
         updates.push({ vid, wei: wei.toString() });
       }
-      // Batch update via UNNEST so we do this in O(1) round-trips.
-      for (let i = 0; i < updates.length; i += 100) {
-        const batch = updates.slice(i, i + 100);
-        const vids = batch.map((u) => u.vid);
-        const weis = batch.map((u) => u.wei);
+      // One UPDATE per row — simpler and Drizzle/neon handle the typing
+      // automatically. 200ish rows, no measurable overhead vs UNNEST.
+      for (const u of updates) {
         await db.execute(sql`
           UPDATE epoch_snapshots
-             SET auth_unclaimed_wei = u.wei
-            FROM (
-              SELECT
-                UNNEST(${vids}::int[])   AS vid,
-                UNNEST(${weis}::text[]) AS wei
-            ) AS u
-           WHERE epoch_snapshots.epoch = ${epoch}
-             AND epoch_snapshots.validator_id = u.vid
+             SET auth_unclaimed_wei = ${u.wei}
+           WHERE epoch = ${epoch}
+             AND validator_id = ${u.vid}
         `);
       }
       console.log(
