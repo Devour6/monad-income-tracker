@@ -867,24 +867,50 @@ export async function GET(
     const poolUnclaimedMon = toMon(poolUnclaimedWei);
     const poolUnclaimedUsd = poolUnclaimedMon * livePrice;
 
-    // Lifetime income = sum of per-epoch validator-share earnings + priority
-    // fees over the window. validatorShareMon per epoch is derived from the
-    // on-chain unclaimed_rewards delta + claim events times the auth
-    // address's pro-rata stake, so it counts what was earned in each epoch
-    // regardless of whether it's been claimed yet.
+    // Income accounting (strict on-chain):
+    //   earned_in_window = authUnc[end] - authUnc[start] + claims_in_window
     //
-    // claimedMon stays as the literal sum of ClaimRewards events for
-    // auditability — it shows what's been withdrawn to the wallet so far.
-    const totalIncomeMon = summaryCommissionMon + summaryPriorityFeesMon;
-    const totalIncomeUsd = summaryCommissionUsd + summaryPriorityFeesUsd;
+    // For lifetime (full window): start = 0 (never claimed before),
+    //   so earned = currentAuthUnc + lifetime_claims = lifetimeAuthEarnedMon.
+    //
+    // For sliced window: use authUnc at the window edges. If start has no
+    //   auth_unclaimed_wei snapshot, fall back to per-epoch share sum
+    //   (which is correct for everything inside our snapshot coverage).
+    let windowEarnedMon: number;
+    if (isFullWindow) {
+      windowEarnedMon = lifetimeAuthEarnedMon;
+    } else {
+      // Find authUnc at window edges
+      let startAuthUnc: bigint | null = null;
+      let endAuthUnc: bigint | null = null;
+      for (const s of inWindow) {
+        const v = authUncByEpoch.get(s.epoch);
+        if (v != null) {
+          if (startAuthUnc == null) startAuthUnc = v;
+          endAuthUnc = v;
+        }
+      }
+      if (startAuthUnc != null && endAuthUnc != null) {
+        const deltaWei = endAuthUnc - startAuthUnc;
+        const deltaMon = deltaWei >= BigInt(0)
+          ? toMon(deltaWei)
+          : -toMon(-deltaWei);
+        windowEarnedMon = Math.max(0, deltaMon + summaryClaimedMon);
+      } else {
+        windowEarnedMon = summaryCommissionMon;
+      }
+    }
+    const totalIncomeMon = windowEarnedMon + summaryPriorityFeesMon;
+    const totalIncomeUsd = totalIncomeMon * livePrice;
     const netUsd = totalIncomeUsd - serverCostProRatedUsd;
 
     const summary = {
       claimCount: claimRows.length,
-      // Lifetime earnings = sum of per-epoch validator pro-rata shares.
-      // Counts on-chain pool growth during this window, regardless of claims.
-      commissionMon: summaryCommissionMon,
-      commissionUsd: summaryCommissionUsd,
+      // Earned in window = authUnc[end] − authUnc[start] + claims_in_window
+      // (strict on-chain accounting). For lifetime view, this equals
+      // currentAuthUnc + lifetime_claims.
+      commissionMon: windowEarnedMon,
+      commissionUsd: windowEarnedMon * livePrice,
       priorityFeesMon: summaryPriorityFeesMon,
       priorityFeesUsd: summaryPriorityFeesUsd,
       // What the auth address has actually withdrawn on-chain (subset of
