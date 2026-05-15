@@ -267,11 +267,23 @@ export default function ValidatorDashboard() {
     if (!data) return [];
     // Plot validator's pro-rata share of pool earnings + priority fees
     // per epoch. Both are direct from on-chain state — no projection.
-    return data.epochs.slice(-90).map((e) => ({
-      epoch: e.epoch,
-      yourShare: e.validatorShareMon,
-      priorityFees: e.priorityFeesMon,
-    }));
+    // Filter out epochs with zero share AND zero priority fees AND no
+    // claim — those are either pre-indexing gaps or precompile rebasing
+    // dips where no real income accrued. Surfacing them as empty bars
+    // is misleading.
+    return data.epochs
+      .slice(-90)
+      .filter(
+        (e) =>
+          e.validatorShareMon > 0 ||
+          e.priorityFeesMon > 0 ||
+          e.claimedMon > 0
+      )
+      .map((e) => ({
+        epoch: e.epoch,
+        yourShare: e.validatorShareMon,
+        priorityFees: e.priorityFeesMon,
+      }));
   }, [data]);
 
   const presetLabel = useMemo(() => {
@@ -742,7 +754,15 @@ export default function ValidatorDashboard() {
                   Per-epoch breakdown
                 </div>
                 <div className="text-[10px] font-body text-cream-40">
-                  {data.epochs.length} epochs
+                  {
+                    data.epochs.filter(
+                      (e) =>
+                        e.validatorShareMon > 0 ||
+                        e.priorityFeesMon > 0 ||
+                        e.claimedMon > 0
+                    ).length
+                  }{" "}
+                  epochs with income
                 </div>
               </div>
               <div className="px-4 sm:px-5 py-2 border-b border-cream-12 bg-cream-5/50 text-[10px] font-body text-cream-40 leading-relaxed">
@@ -773,6 +793,12 @@ export default function ValidatorDashboard() {
                     {data.epochs
                       .slice()
                       .reverse()
+                      .filter(
+                        (e) =>
+                          e.validatorShareMon > 0 ||
+                          e.priorityFeesMon > 0 ||
+                          e.claimedMon > 0
+                      )
                       .map((e, i) => (
                         <tr
                           key={e.epoch}
