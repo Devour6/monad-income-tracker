@@ -1,21 +1,27 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { validators, epochSnapshots } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { claimEvents } from "@/lib/db/claim-events-schema";
+import { eq, desc, sql, and, gte } from "drizzle-orm";
 import { computeApy, EPOCHS_PER_DAY } from "@/lib/apy";
-import { calculateEpochReward } from "@/lib/monad-rpc";
 
 const WEI_PER_MON = BigInt(10) ** BigInt(18);
 
 /**
  * GET /api/validators/[id]?epochs=30
  *
- * Returns detailed info for a single validator:
- * - Basic metadata from the validators table
- * - APY computed from the latest 2 epoch snapshots (pool-level, gross of commission)
- * - Realized income: commission, pool, delegator earnings over observed window
- * - Stake history (last N snapshots)
- * - Commission history (last N snapshots)
+ * Returns detailed info for a single validator.
+ *
+ * Income fields are sourced from real on-chain data ONLY:
+ *   - commissionMon = sum of ClaimRewards events to the auth address +
+ *                     (current auth_unclaimed - earliest-in-window auth_unclaimed)
+ *   - APY = measured pool yield from accRewardPerToken accumulator delta
+ *     (this is the actual delegator-pool yield, not a projection)
+ *
+ * We deliberately do NOT compute `commissionMon = poolMon × commission_rate`.
+ * That formula overcounts by 2-5x because the on-chain protocol distribution
+ * isn't a simple rate × pool — verified empirically against CFO records and
+ * the staking precompile's `getDelegator(valId, authAddr).slot2` reading.
  */
 export async function GET(
   request: Request,
@@ -25,10 +31,7 @@ export async function GET(
   const validatorId = parseInt(id, 10);
 
   if (isNaN(validatorId) || validatorId < 1) {
-    return NextResponse.json(
-      { error: "Invalid validator ID" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid validator ID" }, { status: 400 });
   }
 
   const url = new URL(request.url);
@@ -59,7 +62,8 @@ export async function GET(
       .orderBy(desc(epochSnapshots.epoch))
       .limit(epochCount + 1);
 
-    // APY from the latest 2 snapshots (pool-level)
+    // APY from the latest 2 snapshots (delegator-pool yield, measured on-chain
+    // via accRewardPerToken accumulator delta — not a model).
     let apy = 0;
     if (snapshots.length >= 2) {
       const latest = snapshots[0];
@@ -75,7 +79,6 @@ export async function GET(
       }
     }
 
-    // Stake history
     const stakeHistory = snapshots.map((s) => {
       const sw = BigInt(s.stakeWei);
       const stakeMon =
@@ -84,35 +87,85 @@ export async function GET(
       return { epoch: s.epoch, stakeMon, stakeWei: s.stakeWei };
     });
 
-    // Commission history (raw is 18-decimal fixed-point; /1e16 → percentage 0-100)
     const commissionHistory = snapshots.map((s) => ({
       epoch: s.epoch,
       commissionPct: Number(BigInt(s.commission)) / 1e16,
       commissionRaw: s.commission,
     }));
 
-    // Realized income across consecutive snapshot pairs
-    const chronological = [...snapshots].reverse();
-    let totalPool = 0;
-    let totalCommission = 0;
-    let totalEpochSpan = 0;
+    // Realized commission income — on-chain truth only.
+    //
+    // 1) Sum every ClaimRewards event to the auth address in the window.
+    // 2) Plus the current auth_unclaimed slot from the most recent snapshot
+    //    minus the earliest-in-window auth_unclaimed (the accrued-but-not-
+    //    yet-withdrawn delta over the observed range).
+    const oldestEpoch =
+      snapshots.length > 0
+        ? snapshots[snapshots.length - 1].epoch
+        : 0;
+    const auth = validator.authAddress.toLowerCase();
 
-    for (let i = 1; i < chronological.length; i++) {
-      const prev = chronological[i - 1];
-      const curr = chronological[i];
-      const { totalRewardMon: poolMon } = calculateEpochReward(
-        BigInt(prev.accRewardPerToken),
-        BigInt(curr.accRewardPerToken),
-        BigInt(prev.stakeWei)
+    const claimRows = await db
+      .select({
+        amountWei: claimEvents.amountWei,
+      })
+      .from(claimEvents)
+      .where(
+        and(
+          eq(claimEvents.validatorId, validatorId),
+          eq(claimEvents.delegator, auth),
+          gte(claimEvents.epoch, oldestEpoch)
+        )
       );
-      const commissionRate = Number(BigInt(curr.commission)) / 1e18;
-      totalPool += poolMon;
-      totalCommission += poolMon * commissionRate;
-      totalEpochSpan += curr.epoch - prev.epoch;
+    let claimedWei = BigInt(0);
+    for (const r of claimRows) claimedWei += BigInt(r.amountWei);
+    const claimedMon =
+      Number(claimedWei / WEI_PER_MON) +
+      Number(claimedWei % WEI_PER_MON) / Number(WEI_PER_MON);
+
+    // Auth-unclaimed delta over the observed window.
+    // Read via raw SQL since the typed schema doesn't know about the column.
+    const authUncRows = (await db.execute(sql`
+      SELECT epoch, auth_unclaimed_wei
+      FROM epoch_snapshots
+      WHERE validator_id = ${validatorId}
+        AND auth_unclaimed_wei IS NOT NULL
+        AND epoch >= ${oldestEpoch}
+      ORDER BY epoch DESC
+    `)) as unknown as {
+      rows?: Array<{ epoch: number; auth_unclaimed_wei: string }>;
+    };
+    const authUncList = Array.isArray(authUncRows.rows)
+      ? authUncRows.rows
+      : (authUncRows as unknown as Array<{
+          epoch: number;
+          auth_unclaimed_wei: string;
+        }>);
+
+    let authUncDeltaMon = 0;
+    if (authUncList.length >= 2) {
+      const latest = BigInt(authUncList[0].auth_unclaimed_wei || "0");
+      const earliest = BigInt(
+        authUncList[authUncList.length - 1].auth_unclaimed_wei || "0"
+      );
+      const delta = latest > earliest ? latest - earliest : BigInt(0);
+      authUncDeltaMon =
+        Number(delta / WEI_PER_MON) +
+        Number(delta % WEI_PER_MON) / Number(WEI_PER_MON);
+    } else if (authUncList.length === 1) {
+      // Only one auth_unclaimed sample: count current pending as accrual
+      // (better undercount-correctly than guess).
+      const latest = BigInt(authUncList[0].auth_unclaimed_wei || "0");
+      authUncDeltaMon =
+        Number(latest / WEI_PER_MON) +
+        Number(latest % WEI_PER_MON) / Number(WEI_PER_MON);
     }
 
-    const avgPoolPerEpoch =
-      totalEpochSpan > 0 ? totalPool / totalEpochSpan : 0;
+    const totalCommission = claimedMon + authUncDeltaMon;
+    const totalEpochSpan =
+      snapshots.length > 1
+        ? snapshots[0].epoch - snapshots[snapshots.length - 1].epoch
+        : 0;
     const avgCommissionPerEpoch =
       totalEpochSpan > 0 ? totalCommission / totalEpochSpan : 0;
 
@@ -130,21 +183,18 @@ export async function GET(
       income: {
         observed: {
           epochCount: totalEpochSpan,
-          snapshotCount: chronological.length > 1 ? chronological.length - 1 : 0,
+          snapshotCount: snapshots.length,
           daysObserved: totalEpochSpan / EPOCHS_PER_DAY,
-          poolRewardsMon: totalPool,
+          // Commission income — claims + auth-unclaimed delta. On-chain only.
           commissionMon: totalCommission,
-          delegatorRewardsMon: totalPool - totalCommission,
+          claimedMon,
+          pendingDeltaMon: authUncDeltaMon,
         },
         rates: {
           commissionPerEpochMon: avgCommissionPerEpoch,
           commissionPerDayMon: avgCommissionPerEpoch * EPOCHS_PER_DAY,
           commissionPerMonthMon: avgCommissionPerEpoch * EPOCHS_PER_DAY * 30,
           commissionPerYearMon: avgCommissionPerEpoch * EPOCHS_PER_DAY * 365,
-          poolPerEpochMon: avgPoolPerEpoch,
-          poolPerDayMon: avgPoolPerEpoch * EPOCHS_PER_DAY,
-          poolPerMonthMon: avgPoolPerEpoch * EPOCHS_PER_DAY * 30,
-          poolPerYearMon: avgPoolPerEpoch * EPOCHS_PER_DAY * 365,
         },
       },
       stakeHistory,

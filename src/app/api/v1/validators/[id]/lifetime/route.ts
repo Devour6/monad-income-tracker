@@ -3,10 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * GET /api/v1/validators/[id]/lifetime
  *
- * Convenience wrapper that fetches the validator's full income window —
- * everything we have snapshots for — by passing a very large epoch cap to
- * the underlying income route. Frontends use this for lifetime totals so
- * they don't have to know how far back the backfill has reached.
+ * Convenience wrapper around `/api/v1/validators/[id]/realized-report` with
+ * no date filter (= all time). Returns the full income history from real
+ * on-chain ClaimRewards events + auth_unclaimed deltas.
+ *
+ * Used to proxy through the now-deprecated `/api/validators/[id]/income?epochs=10000`
+ * — that endpoint computed commission via pool × commission_rate which
+ * overcounted by 2-5x. Same shape now sourced from realized-report.
  */
 export async function GET(
   req: NextRequest,
@@ -19,7 +22,7 @@ export async function GET(
   }
 
   const origin = req.nextUrl.origin;
-  const upstream = `${origin}/api/validators/${validatorId}/income?epochs=10000`;
+  const upstream = `${origin}/api/v1/validators/${validatorId}/realized-report`;
   const apiKey = req.headers.get("x-api-key");
   const headers: HeadersInit = {};
   if (apiKey) headers["x-api-key"] = apiKey;
@@ -28,7 +31,9 @@ export async function GET(
   const body = await r.text();
   const res = new NextResponse(body, {
     status: r.status,
-    headers: { "Content-Type": r.headers.get("content-type") ?? "application/json" },
+    headers: {
+      "Content-Type": r.headers.get("content-type") ?? "application/json",
+    },
   });
   res.headers.set("X-API-Version", "v1");
   res.headers.set(
