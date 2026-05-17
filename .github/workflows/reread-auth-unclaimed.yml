@@ -1,0 +1,40 @@
+name: Re-read auth_unclaimed at deterministic blocks
+
+# Canonicalizes epoch_snapshots.auth_unclaimed_wei for recently closed
+# epochs by sampling getDelegator(valId, auth) at (epoch_end - 10 blocks)
+# instead of the live cron's "current block" mid-epoch noise. Fixes the
+# phantom "no income" chart rows that come from non-monotonic auth values
+# between adjacent epochs.
+#
+# Runs every 30 min. The endpoint walks the last 8 closed epochs each call
+# (idempotent), so any single missed run self-heals on the next fire.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reread:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    concurrency:
+      group: reread-auth-unclaimed
+      cancel-in-progress: false
+    steps:
+      - name: Hit reread endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --max-time 65 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://monad-income-tracker.vercel.app/api/cron/reread-auth-unclaimed" \
+            | tee /tmp/result.json
+          echo ""
+          echo "--- summary ---"
+          jq -r '"  ok: \(.ok)  durationMs: \(.durationMs)  epochs: \(.epochsProcessed)  updated: \(.totalUpdated)  failed: \(.totalFailed)"' /tmp/result.json || true
