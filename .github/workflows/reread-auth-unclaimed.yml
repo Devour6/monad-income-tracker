@@ -2,17 +2,12 @@ name: Re-read auth_unclaimed at deterministic blocks
 
 # Canonicalizes epoch_snapshots.auth_unclaimed_wei for recently closed
 # epochs by sampling getDelegator(valId, auth) at (epoch_end - 10 blocks)
-# instead of the live cron's "current block" mid-epoch noise. Fixes the
-# phantom "no income" chart rows that come from non-monotonic auth values
-# between adjacent epochs.
+# instead of the live cron's "current block" mid-epoch noise.
 #
-# Runs every hour. Monad epochs are ~5.5h, so one fire per hour catches
-# every newly-closed epoch with 5x headroom. The endpoint walks the last
-# 4 closed epochs each call (idempotent), so any single missed run
-# self-heals on the next fire.
-#
-# Budget: ~30 min/month at ~25s/run × 730 runs/mo. Stays well under the
-# 2000 min/mo GH Actions Free cap when combined with other workflows.
+# Hourly cadence — epochs close every ~5.5h so once per hour gives 5x
+# coverage. Walks last 4 closed epochs each call (idempotent, self-healing).
+# Retries up to 2 times on transient errors so a single hiccup doesn't
+# leave a phantom "no income" row visible until the next fire.
 
 on:
   schedule:
@@ -30,16 +25,26 @@ jobs:
       group: reread-auth-unclaimed
       cancel-in-progress: false
     steps:
-      - name: Hit reread endpoint
+      - name: Hit reread endpoint with retries
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          set -euo pipefail
-          curl --fail-with-body --silent --show-error \
-            --max-time 60 \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "https://monad-income-tracker.vercel.app/api/cron/reread-auth-unclaimed?lookback=4" \
-            | tee /tmp/result.json
-          echo ""
-          echo "--- summary ---"
-          jq -r '"  ok: \(.ok)  durationMs: \(.durationMs)  epochs: \(.epochsProcessed)  updated: \(.totalUpdated)  failed: \(.totalFailed)"' /tmp/result.json || true
+          set -uo pipefail
+          URL="https://monad-income-tracker.vercel.app/api/cron/reread-auth-unclaimed"
+          for i in 1 2; do
+            echo "--- attempt $i ---"
+            HTTP_CODE=$(curl -sS -o /tmp/result.json -w "%{http_code}" \
+              --max-time 60 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$URL" || echo "000")
+            echo "HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              jq -r '"  ok: \(.ok)  durationMs: \(.durationMs)  epochs: \(.epochsProcessed)  updated: \(.totalUpdated)  failed: \(.totalFailed)"' /tmp/result.json || cat /tmp/result.json
+              exit 0
+            fi
+            echo "non-200, retrying in 10s..."
+            cat /tmp/result.json 2>/dev/null || true
+            sleep 10
+          done
+          echo "both attempts failed — next scheduled run will retry"
+          exit 0  # don't fail; cron self-heals

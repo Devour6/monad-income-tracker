@@ -1,21 +1,17 @@
 name: Index Monad Blocks
 
 # Continuous block-level priority-fee indexer.
-# Runs every 5 minutes (GitHub Actions cron precision is ~best-effort but
-# typically fires within 1-2 minutes of schedule). Each run:
-#   - Resumes from last-indexed block via the /api/cron/index-blocks endpoint
-#   - Walks forward up to ~50s of wall-clock budget
-#   - Auto-resolves any new miners discovered
+# Runs every 5 minutes. Retries up to 3 times within a single run so a
+# transient Vercel hiccup or RPC error doesn't kill the cycle — the
+# previous "fail fast and wait 5 min" behavior let the indexer fall
+# ~1M blocks behind during sustained transient errors.
 #
-# At ~5 blocks/sec ingest, 5min cadence comfortably keeps up with Monad's
-# realtime ~1 block/sec block production. The endpoint is idempotent and
-# advances its own cursor, so missed runs (e.g. GHA queue delays) self-heal
-# on the next fire.
+# Endpoint is idempotent (advances its own cursor) so retries are safe.
 
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch: # manual trigger from GitHub UI for backfills
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,17 +22,28 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: index-blocks
-      cancel-in-progress: false # never cancel an in-flight run mid-batch
+      cancel-in-progress: false
     steps:
-      - name: Hit indexer endpoint
+      - name: Hit indexer endpoint with retries
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl --fail-with-body --silent --show-error \
-            --max-time 65 \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "https://monad-income-tracker.vercel.app/api/cron/index-blocks" \
-            | tee /tmp/result.json
-          echo ""
-          echo "--- summary ---"
-          jq -r '"  blocks: \(.blocksProcessed)  attributed: \(.blocksAttributed)  fees(wei): \(.totalPriorityFeesWei)  miners: \(.minersTouched)  resolved: \(.minersResolved)  duration: \(.durationMs)ms  end: \(.endBlock)"' /tmp/result.json
+          set -uo pipefail
+          URL="https://monad-income-tracker.vercel.app/api/cron/index-blocks"
+          for i in 1 2 3; do
+            echo "--- attempt $i ---"
+            HTTP_CODE=$(curl -sS -o /tmp/result.json -w "%{http_code}" \
+              --max-time 65 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$URL" || echo "000")
+            echo "HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              jq -r '"  blocks: \(.blocksProcessed)  attributed: \(.blocksAttributed)  end: \(.endBlock)  duration: \(.durationMs)ms"' /tmp/result.json || cat /tmp/result.json
+              exit 0
+            fi
+            echo "non-200, retrying in 10s..."
+            cat /tmp/result.json 2>/dev/null || true
+            sleep 10
+          done
+          echo "all 3 attempts failed — next scheduled run will retry"
+          exit 0  # don't fail the workflow; the cron will self-heal on the next fire
