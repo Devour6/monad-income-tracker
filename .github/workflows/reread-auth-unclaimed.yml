@@ -6,12 +6,17 @@ name: Re-read auth_unclaimed at deterministic blocks
 # phantom "no income" chart rows that come from non-monotonic auth values
 # between adjacent epochs.
 #
-# Runs every 30 min. The endpoint walks the last 8 closed epochs each call
-# (idempotent), so any single missed run self-heals on the next fire.
+# Runs every hour. Monad epochs are ~5.5h, so one fire per hour catches
+# every newly-closed epoch with 5x headroom. The endpoint walks the last
+# 4 closed epochs each call (idempotent), so any single missed run
+# self-heals on the next fire.
+#
+# Budget: ~30 min/month at ~25s/run × 730 runs/mo. Stays well under the
+# 2000 min/mo GH Actions Free cap when combined with other workflows.
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -20,7 +25,7 @@ permissions:
 jobs:
   reread:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 2
     concurrency:
       group: reread-auth-unclaimed
       cancel-in-progress: false
@@ -31,9 +36,9 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail-with-body --silent --show-error \
-            --max-time 65 \
+            --max-time 60 \
             -H "Authorization: Bearer $CRON_SECRET" \
-            "https://monad-income-tracker.vercel.app/api/cron/reread-auth-unclaimed" \
+            "https://monad-income-tracker.vercel.app/api/cron/reread-auth-unclaimed?lookback=4" \
             | tee /tmp/result.json
           echo ""
           echo "--- summary ---"
