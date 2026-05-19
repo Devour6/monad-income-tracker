@@ -58,9 +58,9 @@ function decodeValidator(hex) {
   const slot = (i) => h.slice(i * 64, (i + 1) * 64);
   return {
     authAddress: "0x" + slot(0).slice(24),
-    commission: BigInt("0x" + slot(2)),
-    stakeWei: BigInt("0x" + slot(3)),
-    accRewardPerToken: BigInt("0x" + slot(4)),
+    commission: BigInt("0x" + slot(4)),
+    stakeWei: BigInt("0x" + slot(2)),
+    accRewardPerToken: BigInt("0x" + slot(3)),
     unclaimedRewards: BigInt("0x" + slot(5)),
   };
 }

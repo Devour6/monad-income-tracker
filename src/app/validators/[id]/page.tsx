@@ -776,7 +776,7 @@ export default function ValidatorDashboard() {
               </div>
               <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
                 <table className="w-full text-xs font-body min-w-[760px]">
-                  <thead className="bg-cream-5 sticky top-0 z-10">
+                  <thead className="bg-dark border-b border-cream-12 sticky top-0 z-20">
                     <tr className="text-cream-40 text-[10px] uppercase tracking-widest">
                       <th className="text-left px-3 sm:px-4 py-2 font-body">Epoch</th>
                       <th className="hidden sm:table-cell text-left px-4 py-2 font-body">Date</th>
