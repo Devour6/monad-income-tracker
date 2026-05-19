@@ -1,0 +1,48 @@
+name: Fill snapshot gaps
+
+# Self-healing safety net. Scans the last 30 closed epochs for any
+# (epoch, validator) pair missing from epoch_snapshots and fills it via
+# getValidator + getDelegator at the canonical (epoch_end - 10) block tag.
+#
+# Catches the failure mode where the live snapshot cron OR the missing-
+# snapshots backfill RPC-fails for a subset of validators and never retries.
+#
+# Runs hourly. Idempotent — only fills, never overwrites.
+
+on:
+  schedule:
+    - cron: "30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    concurrency:
+      group: fill-snapshot-gaps
+      cancel-in-progress: false
+    steps:
+      - name: Hit fill-gaps endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          URL="https://monad-income-tracker.vercel.app/api/cron/fill-snapshot-gaps"
+          for attempt in 1 2 3; do
+            resp=$(curl -sS --max-time 60 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$URL" || echo '{"ok":false,"error":"curl failed"}')
+            ok=$(echo "$resp" | jq -r '.ok // false')
+            if [ "$ok" = "true" ]; then
+              echo "$resp" | jq -r '"  gaps=\(.gapsFound)  inserted=\(.inserted)  failed=\(.failed)  epochs=\(.epochsTouched)  duration=\(.durationMs)ms"'
+              exit 0
+            fi
+            echo "attempt $attempt failed, retrying in 2s"
+            echo "$resp" | head -c 200
+            echo ""
+            sleep 2
+          done
+          echo "all 3 attempts failed"
+          exit 1
