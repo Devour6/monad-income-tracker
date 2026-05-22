@@ -5,9 +5,9 @@ name: Burst catchup (block + MEV indexers)
 # cron endpoint up to MAX_BURSTS times in a row to burn down the backlog.
 # When caught up, exits in seconds — zero idle cost.
 #
-# This is the permanent fix for "indexer silently drifts after a transient
-# failure and we have to babysit it." Hardened with retry-per-call so a
-# single 5xx doesn't kill the burst.
+# Permanent fix for "indexer silently drifts after a transient failure
+# and we have to babysit it." Hardened with retry-per-call so a single
+# 5xx doesn't kill the burst.
 
 on:
   schedule:
@@ -28,70 +28,71 @@ jobs:
       - name: Check lag and burst-catchup if drifting
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        # No `set -e` — we want the script to keep going past individual
+        # call failures. Bursts are idempotent; partial progress is fine.
         run: |
-          set -euo pipefail
           BASE="https://monad-income-tracker.vercel.app"
           LAG_THRESHOLD=50000
           MAX_BURSTS=5
 
-          # call_with_retry <url> — hits an endpoint with 3 retries on
-          # transient errors (5xx, network) so a single hiccup doesn't kill
-          # the run. Always exits 0; the caller checks the response.
+          # Hit an endpoint, retry up to 3x on transient errors. Always
+          # exits 0; caller doesn't care if a single attempt failed.
           call_with_retry() {
             local url="$1"
-            local attempt
+            local attempt body code
             for attempt in 1 2 3; do
-              resp=$(curl -sS --max-time 65 \
-                -H "Authorization: Bearer $CRON_SECRET" \
-                -w "\nHTTP %{http_code}" \
-                "$url" 2>&1) || true
-              code=$(echo "$resp" | tail -1 | awk '{print $2}')
+              body=$(curl -sS --max-time 65 \
+                -H "Authorization: Bearer ${CRON_SECRET}" \
+                -w "\n__HTTP__%{http_code}" \
+                "$url" 2>/dev/null)
+              code=$(printf '%s' "$body" | tail -1 | sed 's/__HTTP__//')
               if [ "$code" = "200" ]; then
-                echo "$resp" | sed '$d'
+                printf '%s' "$body" | sed '$d'
                 return 0
               fi
-              echo "  attempt $attempt failed (http=$code), retrying in 2s..."
+              echo "  attempt $attempt failed (http=$code), retrying..." >&2
               sleep 2
             done
-            echo "  all 3 attempts failed"
-            return 1
+            echo "  all 3 attempts failed" >&2
+            return 0
           }
 
-          # Pull current lag for both indexers.
-          status=$(curl -sS --max-time 30 "$BASE/api/v1/indexer/status" || echo '{}')
-          block_lag=$(echo "$status" | jq -r '.lagBlocks // 0')
-          echo "block indexer lag: $block_lag blocks"
+          # Read current block-indexer lag. Default to 0 on parse failure.
+          status_json=$(curl -sS --max-time 30 "$BASE/api/v1/indexer/status" 2>/dev/null || echo '{}')
+          block_lag=$(echo "$status_json" | jq -r '.lagBlocks // 0' 2>/dev/null || echo 0)
+          # Strip anything that isn't a digit so arithmetic always works.
+          block_lag=$(echo "$block_lag" | tr -cd '0-9')
+          [ -z "$block_lag" ] && block_lag=0
+          echo "block indexer lag: $block_lag blocks (threshold $LAG_THRESHOLD)"
 
-          # Block indexer burst.
           if [ "$block_lag" -gt "$LAG_THRESHOLD" ]; then
-            echo "block lag exceeds $LAG_THRESHOLD, bursting up to $MAX_BURSTS calls..."
-            for i in $(seq 1 $MAX_BURSTS); do
+            echo "lag exceeds threshold, bursting up to $MAX_BURSTS block-indexer calls"
+            i=1
+            while [ "$i" -le "$MAX_BURSTS" ]; do
               echo "--- block call $i ---"
               call_with_retry "$BASE/api/cron/index-blocks" | \
-                jq -r '"  processed=\(.blocksProcessed) attributed=\(.blocksAttributed) end=\(.endBlock) dur=\(.durationMs)ms"' || true
+                jq -r '"  processed=\(.blocksProcessed) attributed=\(.blocksAttributed) end=\(.endBlock) dur=\(.durationMs)ms"' 2>/dev/null || true
               # Re-check lag — exit early if caught up.
-              new_lag=$(curl -sS --max-time 10 "$BASE/api/v1/indexer/status" | jq -r '.lagBlocks // 0')
+              new_lag=$(curl -sS --max-time 10 "$BASE/api/v1/indexer/status" 2>/dev/null | \
+                jq -r '.lagBlocks // 0' 2>/dev/null | tr -cd '0-9')
+              [ -z "$new_lag" ] && new_lag=0
               echo "  lag now: $new_lag"
               if [ "$new_lag" -lt "$LAG_THRESHOLD" ]; then
                 echo "caught up, stopping block burst"
                 break
               fi
+              i=$((i + 1))
+            done
+
+            # MEV indexer was likely also lagging — burst 3 calls.
+            echo "also bursting MEV indexer 3x..."
+            for j in 1 2 3; do
+              echo "--- mev call $j ---"
+              call_with_retry "$BASE/api/cron/index-mev" | \
+                jq -r '"  scanned=\(.blocksScanned) inserted=\(.rowsInserted) end=\(.endBlock) hitBudget=\(.hitBudget)"' 2>/dev/null || true
             done
           else
             echo "block indexer at-head, skipping burst"
           fi
 
-          # MEV indexer burst — no dedicated status endpoint, so we just fire
-          # a few times when block was lagging (MEV has its own cursor and
-          # the endpoint is idempotent + budget-bounded, so extra calls are
-          # cheap when caught up).
-          if [ "$block_lag" -gt "$LAG_THRESHOLD" ]; then
-            echo "block was lagging, also bursting MEV indexer..."
-            for i in 1 2 3; do
-              echo "--- mev call $i ---"
-              call_with_retry "$BASE/api/cron/index-mev" | \
-                jq -r '"  scanned=\(.blocksScanned) inserted=\(.rowsInserted) end=\(.endBlock) hitBudget=\(.hitBudget)"' || true
-            done
-          fi
-
-          echo "burst-catchup run complete"
+          echo "burst-catchup complete"
