@@ -1,13 +1,10 @@
 name: Burst catchup (block + MEV indexers)
 
-# Runs every 30 min. Checks lag via /api/v1/indexer/status. If any indexer
-# is more than LAG_THRESHOLD blocks behind chain head, fires that indexer's
-# cron endpoint up to MAX_BURSTS times in a row to burn down the backlog.
-# When caught up, exits in seconds — zero idle cost.
+# Runs every 30 min. Checks lag via /api/v1/indexer/status. Bursts up to
+# 8 block-indexer calls + 4 MEV calls if drifting. Idle when caught up.
 #
-# Permanent fix for "indexer silently drifts after a transient failure
-# and we have to babysit it." Hardened with retry-per-call so a single
-# 5xx doesn't kill the burst.
+# Concurrency: queue (don't cancel) so back-to-back schedules don't kill
+# in-flight progress. Timeout raised to 14 min to fit 8 bursts + retries.
 
 on:
   schedule:
@@ -20,7 +17,7 @@ permissions:
 jobs:
   burst:
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 14
     concurrency:
       group: burst-catchup
       cancel-in-progress: false
@@ -28,15 +25,11 @@ jobs:
       - name: Check lag and burst-catchup if drifting
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        # No `set -e` — we want the script to keep going past individual
-        # call failures. Bursts are idempotent; partial progress is fine.
         run: |
           BASE="https://monad-income-tracker.vercel.app"
           LAG_THRESHOLD=50000
-          MAX_BURSTS=5
+          MAX_BURSTS=8
 
-          # Hit an endpoint, retry up to 3x on transient errors. Always
-          # exits 0; caller doesn't care if a single attempt failed.
           call_with_retry() {
             local url="$1"
             local attempt body code
@@ -57,12 +50,15 @@ jobs:
             return 0
           }
 
-          # Read current block-indexer lag. Default to 0 on parse failure.
-          status_json=$(curl -sS --max-time 30 "$BASE/api/v1/indexer/status" 2>/dev/null || echo '{}')
-          block_lag=$(echo "$status_json" | jq -r '.lagBlocks // 0' 2>/dev/null || echo 0)
-          # Strip anything that isn't a digit so arithmetic always works.
-          block_lag=$(echo "$block_lag" | tr -cd '0-9')
-          [ -z "$block_lag" ] && block_lag=0
+          read_lag() {
+            local lag
+            lag=$(curl -sS --max-time 10 "$BASE/api/v1/indexer/status" 2>/dev/null | \
+              jq -r '.lagBlocks // 0' 2>/dev/null | tr -cd '0-9')
+            [ -z "$lag" ] && lag=0
+            echo "$lag"
+          }
+
+          block_lag=$(read_lag)
           echo "block indexer lag: $block_lag blocks (threshold $LAG_THRESHOLD)"
 
           if [ "$block_lag" -gt "$LAG_THRESHOLD" ]; then
@@ -72,10 +68,7 @@ jobs:
               echo "--- block call $i ---"
               call_with_retry "$BASE/api/cron/index-blocks" | \
                 jq -r '"  processed=\(.blocksProcessed) attributed=\(.blocksAttributed) end=\(.endBlock) dur=\(.durationMs)ms"' 2>/dev/null || true
-              # Re-check lag — exit early if caught up.
-              new_lag=$(curl -sS --max-time 10 "$BASE/api/v1/indexer/status" 2>/dev/null | \
-                jq -r '.lagBlocks // 0' 2>/dev/null | tr -cd '0-9')
-              [ -z "$new_lag" ] && new_lag=0
+              new_lag=$(read_lag)
               echo "  lag now: $new_lag"
               if [ "$new_lag" -lt "$LAG_THRESHOLD" ]; then
                 echo "caught up, stopping block burst"
@@ -84,15 +77,14 @@ jobs:
               i=$((i + 1))
             done
 
-            # MEV indexer was likely also lagging — burst 3 calls.
-            echo "also bursting MEV indexer 3x..."
-            for j in 1 2 3; do
+            echo "also bursting MEV indexer 4x..."
+            for j in 1 2 3 4; do
               echo "--- mev call $j ---"
               call_with_retry "$BASE/api/cron/index-mev" | \
                 jq -r '"  scanned=\(.blocksScanned) inserted=\(.rowsInserted) end=\(.endBlock) hitBudget=\(.hitBudget)"' 2>/dev/null || true
             done
           else
-            echo "block indexer at-head, skipping burst"
+            echo "block indexer at-head, skipping burst (zero-cost idle)"
           fi
 
           echo "burst-catchup complete"
