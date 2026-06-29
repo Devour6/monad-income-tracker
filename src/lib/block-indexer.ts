@@ -171,6 +171,24 @@ async function fetchBlockReceipts(
 // Epoch lookup (cached)
 // ---------------------------------------------------------------------------
 
+// Deterministic epoch anchor: epoch 1413 starts at block 70,622,155.
+// Every epoch is exactly 50,000 blocks. This lets us derive epoch from
+// block number without an eth_call at the historical block tag — critical
+// when the block is below Chainstack's archive state floor (state queries
+// fail, but block headers + receipts still work for eth_getBlockByNumber /
+// eth_getBlockReceipts).
+const EPOCH_ANCHOR_BLOCK = BigInt(70_622_155);
+const EPOCH_ANCHOR_EPOCH = 1413;
+const BLOCKS_PER_EPOCH_BIG = BigInt(50_000);
+
+function deriveEpochFromBlock(blockNumber: bigint): number {
+  // epoch = floor((blk - anchorBlk) / 50000) + anchorEpoch
+  const delta = blockNumber - EPOCH_ANCHOR_BLOCK;
+  // BigInt floor-division handles negative blocks too (Node's BigInt /
+  // truncates toward zero; for our purposes anchor is always older).
+  return Number(delta / BLOCKS_PER_EPOCH_BIG) + EPOCH_ANCHOR_EPOCH;
+}
+
 class EpochLookup {
   private cache = new Map<bigint, number>(); // bucket → epoch
 
@@ -179,20 +197,34 @@ class EpochLookup {
     const cached = this.cache.get(bucket);
     if (cached !== undefined) return cached;
 
-    const out = await rpcBatch<string>([
-      {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_call",
-        params: [
-          { to: STAKING_CONTRACT, data: GET_EPOCH_SELECTOR },
-          "0x" + blockNumber.toString(16),
-        ],
-      },
-    ]);
-    const hex = (out.get(1) ?? "0x").slice(2);
-    if (hex.length < 64) throw new Error(`bad epoch reply at block ${blockNumber}`);
-    const epoch = Number(BigInt("0x" + hex.slice(0, 64)));
+    // Try the precompile first — it's the source of truth for the current
+    // chain state and handles any future epoch-length changes correctly.
+    try {
+      const out = await rpcBatch<string>([
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_call",
+          params: [
+            { to: STAKING_CONTRACT, data: GET_EPOCH_SELECTOR },
+            "0x" + blockNumber.toString(16),
+          ],
+        },
+      ]);
+      const hex = (out.get(1) ?? "0x").slice(2);
+      if (hex.length >= 64) {
+        const epoch = Number(BigInt("0x" + hex.slice(0, 64)));
+        this.cache.set(bucket, epoch);
+        return epoch;
+      }
+    } catch {
+      // Fall through to deterministic derivation.
+    }
+
+    // Fallback: block is below Chainstack's archive state floor (or RPC
+    // returned an unexpected response). Use the deterministic anchor —
+    // epoch boundaries are at fixed 50,000-block intervals.
+    const epoch = deriveEpochFromBlock(blockNumber);
     this.cache.set(bucket, epoch);
     return epoch;
   }
