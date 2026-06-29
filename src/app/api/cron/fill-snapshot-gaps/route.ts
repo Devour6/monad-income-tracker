@@ -77,7 +77,14 @@ export async function GET(req: NextRequest) {
 
   const t0 = Date.now();
   const BUDGET_MS = 50_000;
-  const LOOKBACK_EPOCHS = 30;
+  // Lookback configurable via ?lookback=N for one-shot wider sweeps after
+  // freeze/outage. Default 30 epochs keeps the hourly cron lightweight.
+  const url = new URL(req.url);
+  const lookbackParam = Number(url.searchParams.get("lookback") ?? "30");
+  const LOOKBACK_EPOCHS =
+    Number.isFinite(lookbackParam) && lookbackParam >= 1 && lookbackParam <= 500
+      ? Math.floor(lookbackParam)
+      : 30;
 
   try {
     const head = await getChainHead();
