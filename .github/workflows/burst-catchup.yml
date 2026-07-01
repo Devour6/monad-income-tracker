@@ -70,7 +70,7 @@ jobs:
                 jq -r '"  processed=\(.blocksProcessed) attributed=\(.blocksAttributed) end=\(.endBlock) dur=\(.durationMs)ms"' 2>/dev/null || true
               new_lag=$(read_lag)
               echo "  lag now: $new_lag"
-              if [ "$new_lag" -lt "$LAG_THRESHOLD" ]; then
+              if [ "$new_lag" -gt 0 ] && [ "$new_lag" -lt "$LAG_THRESHOLD" ]; then
                 echo "caught up, stopping block burst"
                 break
               fi
