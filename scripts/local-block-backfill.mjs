@@ -25,11 +25,13 @@ const RPC = process.env.MONAD_RPC || "https://rpc.monad.xyz";
 const STAKING = "0x0000000000000000000000000000000000001000";
 const GET_EPOCH_SEL = "0x757991a8";
 
-const BATCH = 20;
-const SLEEP_MS = 50;
+const BATCH = Number(process.env.BATCH ?? 20);
+const SLEEP_MS = Number(process.env.SLEEP_MS ?? 10);
 const EPOCH_BUCKET = 5000;
-const FLUSH_EVERY_BLOCKS = 5000;
-const PARALLEL = 2; // run N batches concurrently
+const FLUSH_EVERY_BLOCKS = Number(process.env.FLUSH_EVERY ?? 10000);
+const PARALLEL = Number(process.env.PARALLEL ?? 6); // run N batches concurrently
+// Max wall-clock runtime in ms. 0 = unlimited. Set to e.g. 5h for CI.
+const MAX_RUNTIME_MS = Number(process.env.MAX_RUNTIME_MS ?? 0);
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL not set");
@@ -85,6 +87,27 @@ async function getHead() {
   return BigInt(r.get(1) ?? "0x0");
 }
 
+// Combined fetch: blocks + receipts in a single HTTP batch call to halve round trips
+async function fetchBlocksAndReceipts(nums) {
+  const reqs = [];
+  for (let i = 0; i < nums.length; i++) {
+    const hex = "0x" + nums[i].toString(16);
+    reqs.push({ jsonrpc: "2.0", id: i * 2, method: "eth_getBlockByNumber", params: [hex, false] });
+    reqs.push({ jsonrpc: "2.0", id: i * 2 + 1, method: "eth_getBlockReceipts", params: [hex] });
+  }
+  const r = await rpcBatch(reqs);
+  const blocks = new Map();
+  const receipts = new Map();
+  for (let i = 0; i < nums.length; i++) {
+    const b = r.get(i * 2);
+    const rx = r.get(i * 2 + 1);
+    if (b) blocks.set(nums[i], b);
+    if (Array.isArray(rx)) receipts.set(nums[i], rx);
+  }
+  return { blocks, receipts };
+}
+
+// Legacy individual fetchers for retry passes
 async function fetchBlocks(nums) {
   const reqs = nums.map((n, i) => ({
     jsonrpc: "2.0",
@@ -117,24 +140,22 @@ async function fetchReceipts(nums) {
   return out;
 }
 
+// Deterministic epoch derivation — epoch boundaries are at fixed 50,000-block
+// intervals anchored at epoch 1413 = block 70,622,155. This avoids eth_call
+// archive state queries which fail on the public RPC.
+const EPOCH_ANCHOR_BLOCK = 70_622_155n;
+const EPOCH_ANCHOR_EPOCH = 1413;
+const BLOCKS_PER_EPOCH = 50_000n;
+
 const epochCache = new Map();
 async function epochAt(blockNum) {
   const bucket = blockNum - (blockNum % BigInt(EPOCH_BUCKET));
   if (epochCache.has(bucket)) return epochCache.get(bucket);
-  const r = await rpcBatch([
-    {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "eth_call",
-      params: [
-        { to: STAKING, data: GET_EPOCH_SEL },
-        "0x" + blockNum.toString(16),
-      ],
-    },
-  ]);
-  const hex = (r.get(1) ?? "0x").slice(2);
-  if (hex.length < 64) throw new Error(`bad epoch at ${blockNum}`);
-  const epoch = Number(BigInt("0x" + hex.slice(0, 64)));
+
+  // Always use deterministic derivation — avoids costly eth_call to archive
+  // state which the public RPC doesn't support anyway.
+  const delta = blockNum - EPOCH_ANCHOR_BLOCK;
+  const epoch = Number(delta / BLOCKS_PER_EPOCH) + EPOCH_ANCHOR_EPOCH;
   epochCache.set(bucket, epoch);
   return epoch;
 }
@@ -153,31 +174,72 @@ function priorityFees(block, receipts) {
   return total;
 }
 
-async function flush(agg) {
+async function flush(agg, highestBlock) {
   if (agg.size === 0) return;
-  for (const v of agg.values()) {
+
+  // Batch INSERT: group all rows into chunks of 50 for efficient DB writes
+  const rows = [...agg.values()];
+  const CHUNK = 50;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const batch = rows.slice(i, i + CHUNK);
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        await sql`
+        const values = batch
+          .map(
+            (v) =>
+              `(${v.epoch}, '${v.minerAddress}', '${v.priorityFeesWei.toString()}', ${v.blocksProposed}, ${v.firstBlock.toString()}, ${v.lastBlock.toString()}, NOW())`
+          )
+          .join(",\n");
+        await sql(`
           INSERT INTO epoch_priority_fees
             (epoch, miner_address, priority_fees_wei, blocks_proposed, first_block, last_block, updated_at)
-          VALUES (${v.epoch}, ${v.minerAddress}, ${v.priorityFeesWei.toString()}, ${v.blocksProposed}, ${v.firstBlock.toString()}, ${v.lastBlock.toString()}, NOW())
+          VALUES ${values}
           ON CONFLICT (epoch, miner_address) DO UPDATE SET
             priority_fees_wei = (CAST(epoch_priority_fees.priority_fees_wei AS NUMERIC) + CAST(EXCLUDED.priority_fees_wei AS NUMERIC))::TEXT,
             blocks_proposed   = epoch_priority_fees.blocks_proposed + EXCLUDED.blocks_proposed,
             first_block       = LEAST(epoch_priority_fees.first_block, EXCLUDED.first_block),
             last_block        = GREATEST(epoch_priority_fees.last_block, EXCLUDED.last_block),
             updated_at        = NOW()
-        `;
+        `);
         break;
       } catch (e) {
         if (attempt < 4) {
           await sleep(1000 * (attempt + 1));
           continue;
         }
-        console.error(`flush failed for ${v.epoch}:${v.minerAddress}: ${e.message}`);
+        // Fall back to individual inserts for this chunk
+        console.error(`Batch flush error, falling back to individual: ${e.message}`);
+        for (const v of batch) {
+          try {
+            await sql`
+              INSERT INTO epoch_priority_fees
+                (epoch, miner_address, priority_fees_wei, blocks_proposed, first_block, last_block, updated_at)
+              VALUES (${v.epoch}, ${v.minerAddress}, ${v.priorityFeesWei.toString()}, ${v.blocksProposed}, ${v.firstBlock.toString()}, ${v.lastBlock.toString()}, NOW())
+              ON CONFLICT (epoch, miner_address) DO UPDATE SET
+                priority_fees_wei = (CAST(epoch_priority_fees.priority_fees_wei AS NUMERIC) + CAST(EXCLUDED.priority_fees_wei AS NUMERIC))::TEXT,
+                blocks_proposed   = epoch_priority_fees.blocks_proposed + EXCLUDED.blocks_proposed,
+                first_block       = LEAST(epoch_priority_fees.first_block, EXCLUDED.first_block),
+                last_block        = GREATEST(epoch_priority_fees.last_block, EXCLUDED.last_block),
+                updated_at        = NOW()
+            `;
+          } catch (ie) {
+            console.error(`flush failed for ${v.epoch}:${v.minerAddress}: ${ie.message}`);
+          }
+        }
       }
     }
+  }
+
+  // Advance the cursor so Vercel cron doesn't re-process these blocks
+  if (highestBlock != null) {
+    const epoch = await epochAt(highestBlock);
+    await sql`
+      UPDATE indexer_state
+      SET last_block = ${highestBlock.toString()},
+          last_epoch = ${epoch},
+          updated_at = NOW()
+      WHERE last_block < ${highestBlock.toString()}
+    `;
   }
 }
 
@@ -196,13 +258,10 @@ console.log(
 
 async function processBatch(nums, agg) {
   let blocks, receipts;
+  // Fetch blocks and receipts in parallel (separate batch calls — combined
+  // batches have higher error rates on the public RPC)
   try {
-    blocks = await fetchBlocks(nums);
-  } catch (e) {
-    return { attributed: 0, fees: 0n, err: e.message };
-  }
-  try {
-    receipts = await fetchReceipts(nums);
+    [blocks, receipts] = await Promise.all([fetchBlocks(nums), fetchReceipts(nums)]);
   } catch (e) {
     return { attributed: 0, fees: 0n, err: e.message };
   }
@@ -262,6 +321,11 @@ let agg = new Map();
 let blocksSinceFlush = 0;
 
 while (cur <= end) {
+ // Graceful exit if wall-clock budget exceeded
+ if (MAX_RUNTIME_MS > 0 && Date.now() - tStart > MAX_RUNTIME_MS) {
+   console.log(`Wall-clock budget (${MAX_RUNTIME_MS}ms) exceeded — flushing and exiting.`);
+   break;
+ }
  try {
   // Build PARALLEL batches at once
   const batches = [];
@@ -287,7 +351,7 @@ while (cur <= end) {
   await sleep(SLEEP_MS);
 
   if (blocksSinceFlush >= FLUSH_EVERY_BLOCKS) {
-    await flush(agg);
+    await flush(agg, cur - 1n);
     agg = new Map();
     blocksSinceFlush = 0;
     const elapsed = (Date.now() - tStart) / 1000;
@@ -306,7 +370,7 @@ while (cur <= end) {
  }
 }
 
-await flush(agg);
+await flush(agg, cur > start ? cur - 1n : null);
 console.log(
   `\nDONE in ${((Date.now() - tStart) / 1000).toFixed(0)}s scanned=${totalScanned} attributed=${totalAttributed} (${((totalAttributed / totalScanned) * 100).toFixed(1)}%) fees=${(Number(totalFees / 10n ** 18n) + Number(totalFees % 10n ** 18n) / 1e18).toFixed(2)} MON`
 );

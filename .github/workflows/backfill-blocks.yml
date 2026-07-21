@@ -1,0 +1,78 @@
+name: Backfill Blocks (Public RPC)
+
+# Runs local-block-backfill.mjs on GitHub Actions runners using the free
+# public RPC. Each run processes blocks for up to 5 hours, then gracefully
+# exits and re-dispatches itself if blocks remain. Fully hands-off — no
+# laptop required.
+#
+# Trigger manually or let the self-dispatch chain run until caught up.
+
+on:
+  workflow_dispatch:
+  # Also allow the workflow to be triggered by repository_dispatch
+  # (used for self-re-dispatch).
+  repository_dispatch:
+    types: [backfill-continue]
+
+permissions:
+  contents: read
+  actions: write  # needed for self-re-dispatch
+
+concurrency:
+  group: backfill-blocks
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330  # 5.5h hard cap (script exits at 5h)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run block backfill
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MONAD_RPC: "https://rpc.monad.xyz"
+          PARALLEL: "2"
+          SLEEP_MS: "50"
+          FLUSH_EVERY: "5000"
+          MAX_RUNTIME_MS: "18000000"  # 5 hours
+        run: node scripts/local-block-backfill.mjs
+
+      - name: Re-dispatch if not caught up
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check gap between cursor and chain head
+          CURSOR=$(curl -s -X POST https://rpc.monad.xyz \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' \
+            | python3 -c "import json,sys; print(int(json.load(sys.stdin)['result'],16))")
+
+          # Query the DB cursor via a quick node script
+          LAST_BLOCK=$(node -e "
+            const {neon} = require('@neondatabase/serverless');
+            const sql = neon('${{ secrets.DATABASE_URL }}');
+            sql('SELECT last_block FROM indexer_state LIMIT 1')
+              .then(r => console.log(r[0]?.last_block ?? '0'));
+          ")
+
+          GAP=$((CURSOR - LAST_BLOCK))
+          echo "Chain head: $CURSOR, Cursor: $LAST_BLOCK, Gap: $GAP blocks"
+
+          if [ "$GAP" -gt 100000 ]; then
+            echo "Gap > 100k blocks — re-dispatching backfill..."
+            gh api repos/${{ github.repository }}/dispatches \
+              -f event_type=backfill-continue
+          else
+            echo "Gap <= 100k blocks — backfill complete! Regular cron will maintain."
+          fi
