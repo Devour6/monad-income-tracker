@@ -16,7 +16,7 @@ if (!process.env.DATABASE_URL) {
 const sql = neon(process.env.DATABASE_URL);
 const RPC =
   process.env.MONAD_RPC ||
-  "https://monad-mainnet.core.chainstack.com/e645e5ea23a58c7671b3847d83020297";
+  "https://rpc.monad.xyz";
 
 const STAKING = "0x0000000000000000000000000000000000001000";
 const GET_VALIDATOR = "2b6d639a";

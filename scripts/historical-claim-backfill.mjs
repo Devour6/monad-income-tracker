@@ -13,7 +13,7 @@
 import { neon } from '@neondatabase/serverless';
 
 const RPC = process.env.CHAINSTACK_RPC ||
-  'https://monad-mainnet.core.chainstack.com/e645e5ea23a58c7671b3847d83020297';
+  'https://rpc.monad.xyz';
 const STAKING = '0x0000000000000000000000000000000000001000';
 const TOPIC = '0xcb607e6b63c89c95f6ae24ece9fe0e38a7971aa5ed956254f1df47490921727b';
 const PRIMARY_CHUNK = 5000;
