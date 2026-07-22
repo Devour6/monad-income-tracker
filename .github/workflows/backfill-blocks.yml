@@ -59,6 +59,8 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            # Pass cursor so the script resumes from it, not cursor-1M
+            echo "start_block=$((LAST_BLOCK + 1))" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run block backfill
@@ -66,6 +68,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MONAD_RPC: "https://rpc.monad.xyz"
+          START_BLOCK: ${{ steps.check.outputs.start_block }}
           PARALLEL: "2"
           SLEEP_MS: "50"
           FLUSH_EVERY: "5000"
