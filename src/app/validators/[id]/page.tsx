@@ -514,7 +514,15 @@ export default function ValidatorDashboard() {
             <div className="text-cream-40 text-xs">{err}</div>
           </div>
         ) : data ? (
-          <>
+          <div className="relative">
+            {loading && (
+              <div className="absolute inset-x-0 top-4 flex justify-center z-30">
+                <div className="px-3 py-1.5 rounded-full bg-dark/90 border border-cream-12 text-cream-40 text-xs font-body animate-pulse">
+                  Updating…
+                </div>
+              </div>
+            )}
+            <div className={loading ? "opacity-40 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
             {/* Headline tiles — earned per epoch is the truth (on-chain pool
                 growth × validator pro-rata, summed over the window). Claimed
                 is shown as a sub-stat: how much of that has been withdrawn. */}
@@ -898,7 +906,8 @@ export default function ValidatorDashboard() {
                 </div>
               </section>
             )}
-          </>
+          </div>
+          </div>
         ) : null}
 
         <Footer />
