@@ -901,7 +901,11 @@ export async function GET(
       }
     }
     const totalIncomeMon = windowEarnedMon + summaryPriorityFeesMon;
-    const totalIncomeUsd = totalIncomeMon * livePrice;
+    // Use the FX-weighted per-epoch sums so the Historical/Current toggle
+    // actually changes the USD figures. summaryCommissionUsd already sums
+    // each epoch's earnedMon × fxFor(epoch); summaryPriorityFeesUsd does
+    // the same for priority fees.
+    const totalIncomeUsd = summaryCommissionUsd + summaryPriorityFeesUsd;
     const netUsd = totalIncomeUsd - serverCostProRatedUsd;
 
     const summary = {
@@ -910,13 +914,13 @@ export async function GET(
       // (strict on-chain accounting). For lifetime view, this equals
       // currentAuthUnc + lifetime_claims.
       commissionMon: windowEarnedMon,
-      commissionUsd: windowEarnedMon * livePrice,
+      commissionUsd: summaryCommissionUsd,
       priorityFeesMon: summaryPriorityFeesMon,
       priorityFeesUsd: summaryPriorityFeesUsd,
       // What the auth address has actually withdrawn on-chain (subset of
       // commissionMon — earnings that have reached the wallet).
       claimedMon: summaryClaimedMon,
-      claimedUsd: summaryClaimedMon * livePrice,
+      claimedUsd: claimRows.reduce((s, c) => s + c.amountUsd, 0),
       // Pool pending — informational, NOT counted as validator income.
       // Distributed to delegators (incl. validator) on next claim() call.
       poolUnclaimedMon,
