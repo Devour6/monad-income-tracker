@@ -1,0 +1,70 @@
+name: App Maintenance Crons
+
+# Runs the critical cron endpoints that keep the app healthy:
+#   1. snapshot        — captures current epoch's validator data + MON price
+#   2. fill-snapshot-gaps — backfills any missed epoch/validator pairs
+#   3. refresh-price   — updates the latest epoch's MON/USD price
+#   4. index-blocks    — forward block indexer for priority fees
+#   5. index-claims    — forward claim event indexer
+#   6. index-mev       — forward MEV payout indexer
+#
+# Vercel Hobby plan only allows 2 daily crons, so we use GitHub Actions
+# for sub-daily scheduling. Each endpoint is self-bounded (~50s) so the
+# total run time is under 5 minutes.
+
+on:
+  schedule:
+    # Every 2 hours — captures all ~4.36 daily epochs + keeps indexers current
+    - cron: "10 */2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: cron-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Snapshot (capture current epoch)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://monad-income-tracker.vercel.app/api/cron/snapshot")
+          echo "snapshot: HTTP $STATUS"
+
+      - name: Fill snapshot gaps (last 30 epochs)
+        run: |
+          RESP=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://monad-income-tracker.vercel.app/api/cron/fill-snapshot-gaps")
+          echo "$RESP"
+
+      - name: Refresh MON price
+        run: |
+          RESP=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://monad-income-tracker.vercel.app/api/cron/refresh-price")
+          echo "$RESP"
+
+      - name: Index blocks (priority fees)
+        run: |
+          RESP=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://monad-income-tracker.vercel.app/api/cron/index-blocks")
+          echo "$RESP"
+
+      - name: Index claims
+        run: |
+          RESP=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://monad-income-tracker.vercel.app/api/cron/index-claims")
+          echo "$RESP"
+
+      - name: Index MEV payouts
+        run: |
+          RESP=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://monad-income-tracker.vercel.app/api/cron/index-mev")
+          echo "$RESP"
