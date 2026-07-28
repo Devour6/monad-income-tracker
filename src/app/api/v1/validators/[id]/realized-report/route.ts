@@ -900,20 +900,22 @@ export async function GET(
         windowEarnedMon = summaryCommissionMon;
       }
     }
-    const totalIncomeMon = windowEarnedMon + summaryPriorityFeesMon;
-    // Use the FX-weighted per-epoch sums so the Historical/Current toggle
-    // actually changes the USD figures. summaryCommissionUsd already sums
-    // each epoch's earnedMon × fxFor(epoch); summaryPriorityFeesUsd does
-    // the same for priority fees.
+    // Use per-epoch sums for the summary MON figures. These match what the
+    // user sees in the per-epoch table and are more robust against
+    // non-monotonic auth_unclaimed sampling (the edge-to-edge delta can be
+    // 0 or negative when snapshot timing varies). For the lifetime (full
+    // window) view, prefer the definitive on-chain total when it's larger.
+    const commissionMonSummary = isFullWindow
+      ? Math.max(windowEarnedMon, summaryCommissionMon)
+      : summaryCommissionMon;
+    const totalIncomeMon = commissionMonSummary + summaryPriorityFeesMon;
+    // FX-weighted USD sums so the Historical/Current toggle works.
     const totalIncomeUsd = summaryCommissionUsd + summaryPriorityFeesUsd;
     const netUsd = totalIncomeUsd - serverCostProRatedUsd;
 
     const summary = {
       claimCount: claimRows.length,
-      // Earned in window = authUnc[end] − authUnc[start] + claims_in_window
-      // (strict on-chain accounting). For lifetime view, this equals
-      // currentAuthUnc + lifetime_claims.
-      commissionMon: windowEarnedMon,
+      commissionMon: commissionMonSummary,
       commissionUsd: summaryCommissionUsd,
       priorityFeesMon: summaryPriorityFeesMon,
       priorityFeesUsd: summaryPriorityFeesUsd,
